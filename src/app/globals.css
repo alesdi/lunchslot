@@ -1,26 +1,61 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --paper: #f2f5ee;
+  --surface: #fbfcf9;
+  --ink: #17302a;
+  --muted: #5b6e67;
+  --line: #d3dcd1;
+  --yolk: #f6c42a;
+  --yolk-ink: #2a2100;
+  --warn: #b4410f;
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --paper: #0f1b18;
+    --surface: #15241f;
+    --ink: #e6eee8;
+    --muted: #93a69e;
+    --line: #2a3c36;
+    --yolk: #f6c42a;
+    --yolk-ink: #2a2100;
+    --warn: #f08a5d;
+    color-scheme: dark;
   }
 }
 
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-yolk: var(--yolk);
+  --color-yolk-ink: var(--yolk-ink);
+  --color-warn: var(--warn);
+  --font-sans: var(--font-schibsted);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* The one deliberate motion: a slot that just changed glows briefly. */
+@keyframes slot-arrive {
+  from { box-shadow: 0 0 0 6px color-mix(in srgb, var(--yolk) 55%, transparent); }
+  to { box-shadow: 0 0 0 0 transparent; }
+}
+.slot-arrive {
+  animation: slot-arrive 1.2s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .slot-arrive { animation: none; }
 }

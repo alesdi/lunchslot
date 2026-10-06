@@ -1,0 +1,86 @@
+Linked page: https://zcal.co/i/abcd1234
+
+Title: 30 Minute Meeting - zcal
+
+Visible text:
+Scheduling by zcal
+
+A
+Alex Example
+
+💼 Consultant
+
+ 
+
+📍Somewhere
+
+30 Minute Meeting
+
+30 min
+
+Google Meet
+
+Select date and time
+October 2026
+S
+M
+T
+W
+T
+F
+S
+October 2026
+S
+M
+T
+W
+T
+F
+S
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+Europe/Rome
+ 
+(5:41 pm)
+
+am/pm
+
+24h
+
+Data loaded by the page from /api/invites/abcd1234:
+{"status":200,"data":{"invite":{"design":{"dateStep":{"showProfileInfoWithStory":true,"storyFocalPoint":{"x":0,"y":0},"storyShape":"framed"},"layoutType":"cover_photo"},"organizer":{"subscription":"FREE","intro":{"location":"Somewhere","position":"Consultant"},"profilePage":{"design":{"showProfileInfoWithStory":true,"storyFocalPoint":{"x":0,"y":0}}},"theme":{"colors":{"background":"#fbfcfd","accent":"#1a73e8","buttonBackground":"#1a73e8","buttonText":"#ffffff","containerBackground":"#ffffff","text":"#000000"},"containerBackgroundOpacity":0.9,"fontFamily":"Noto Sans"},"flags":{"hasSeenIntroPrompt":true,"hasDefaultLinks":true,"hasEditedInvite":true,"hasAcceptedInvite":true},"firstName":"Alex","lastName":"Example","timezone":"Europe/Rome","integrations":[{"providerName":"google.com","scopes":["calendar","conference"],"calendars":[{"shouldRead":true,"shouldWrite":true}]}],"dateCreated":"2023-10-07 17:02","locale":"en","username":"alex-example","defaultConferenceType":"google.com","defaultWeekAvailabilityTimezone":"Europe/Rome","startOfWeek":1,"id":"000000000000000000000000"},"name":"30 Minute Meeting","inviteType":"one_on_one","availabilityTimezone":"Europe/Rome","slotIncrement":30,"displayedTimezone":"local","minNotice":180,"bufferBefore":0,"bufferAfter":0,"availabilityDateRangeType":"days_from_today","availabilityNumDays":14,"isDefault":true,"availability":[{"duration":570,"rrule":"repeats weekly on Mon at 10:30 (organizer's time zone)","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"},{"duration":570,"rrule":"repeats weekly on Tue at 10:30 (organizer's time zone)","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"},{"duration":570,"rrule":"repeats weekly on Wed at 10:30 (organizer's time zone)","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"},{"duration":570,"rrule":"repeats weekly on Fri at 10:30 (organizer's time zone)","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"},{"duration":570,"rrule":"repeats weekly on Thu at 10:30 (organizer's time zone)","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"},{"duration":1440,"rrule":"EXDATE:20260907T000000Z","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"}],"reminderNotifications":[{"isEnabled":true,"notificationType":"email","reminderTimeMins":1440,"_id":"000000000000000000000000","id":"000000000000000000000000"},{"isEnabled":true,"notificationType":"sms","reminderTimeMins":1440,"_id":"000000000000000000000000","id":"000000000000000000000000"},{"isEnabled":true,"notificationType":"email_followup","reminderTimeMins":1440,"_id":"000000000000000000000000","id":"000000000000000000000000"}],"dateCreated":"2023-10-07 17:04","isEmailRemindersEnabled":true,"eventNameType":"attendees","maxNumberEvents":{"limits":[{"amount":4,"unit":"WEEK","_id":"000000000000000000000000","id":"000000000000000000000000"}],"_id":"000000000000000000000000","id":"000000000000000000000000"},"paymentSettings":{"currency":"USD","_id":"000000000000000000000000","id":"000000000000000000000000"},"profilePageSettings":9999,"inviteAvailabilityType":"saved","locationOptions":["google"],"durationOptions":[30],"availabilityStartEndDates":{"startDate":"2026-09-07 02:00","endDate":"2026-09-21 02:00"},"redirectDelay":1,"shouldMaximizeAvailability":true,"hasEvent":true,"id":"abcd1234"}}}
+
+Data loaded by the page from /api/invites/abcd1234:
+{"status":200,"data":{"invite":{"design":{"dateStep":{"showProfileInfoWithStory":true,"storyFocalPoint":{"x":0,"y":0},"storyShape":"framed"},"layoutType":"cover_photo"},"organizer":{"subscription":"FREE","intro":{"location":"Somewhere","position":"Consultant"},"profilePage":{"design":{"showProfileInfoWithStory":true,"storyFocalPoint":{"x":0,"y":0}}},"theme":{"colors":{"background":"#fbfcfd","accent":"#1a73e8","buttonBackground":"#1a73e8","buttonText":"#ffffff","containerBackground":"#ffffff","text":"#000000"},"containerBackgroundOpacity":0.9,"fontFamily":"Noto Sans"},"flags":{"hasSeenIntroPrompt":true,"hasDefaultLinks":true,"hasEditedInvite":true,"hasAcceptedInvite":true},"firstName":"Alex","lastName":"Example","timezone":"Europe/Rome","integrations":[{"providerName":"google.com","scopes":["calendar","conference"],"calendars":[{"shouldRead":true,"shouldWrite":true}]}],"dateCreated":"2023-10-07 17:02","locale":"en","username":"alex-example","defaultConferenceType":"google.com","defaultWeekAvailabilityTimezone":"Europe/Rome","startOfWeek":1,"id":"000000000000000000000000"},"name":"30 Minute Meeting","inviteType":"one_on_one","availabilityTimezone":"Europe/Rome","slotIncrement":30,"displayedTimezone":"local","minNotice":180,"bufferBefore":0,"bufferAfter":0,"availabilityDateRangeType":"days_from_today","availabilityNumDays":14,"isDefault":true,"availability":[{"duration":570,"rrule":"repeats weekly on Mon at 10:30 (organizer's time zone)","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"},{"duration":570,"rrule":"repeats weekly on Tue at 10:30 (organizer's time zone)","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"},{"duration":570,"rrule":"repeats weekly on Wed at 10:30 (organizer's time zone)","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"},{"duration":570,"rrule":"repeats weekly on Fri at 10:30 (organizer's time zone)","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"},{"duration":570,"rrule":"repeats weekly on Thu at 10:30 (organizer's time zone)","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"},{"duration":1440,"rrule":"EXDATE:20260907T000000Z","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"}],"reminderNotifications":[{"isEnabled":true,"notificationType":"email","reminderTimeMins":1440,"_id":"000000000000000000000000","id":"000000000000000000000000"},{"isEnabled":true,"notificationType":"sms","reminderTimeMins":1440,"_id":"000000000000000000000000","id":"000000000000000000000000"},{"isEnabled":true,"notificationType":"email_followup","reminderTimeMins":1440,"_id":"000000000000000000000000","id":"000000000000000000000000"}],"dateCreated":"2023-10-07 17:04","isEmailRemindersEnabled":true,"eventNameType":"attendees","maxNumberEvents":{"limits":[{"amount":4,"unit":"WEEK","_id":"000000000000000000000000","id":"000000000000000000000000"}],"_id":"000000000000000000000000","id":"000000000000000000000000"},"paymentSettings":{"currency":"USD","_id":"000000000000000000000000","id":"000000000000000000000000"},"profilePageSettings":9999,"inviteAvailabilityType":"saved","locationOptions":["google"],"durationOptions":[30],"availabilityStartEndDates":{"startDate":"2026-09-07 02:00","endDate":"2026-09-21 02:00"},"redirectDelay":1,"shouldMaximizeAvailability":true,"hasEvent":true,"id":"abcd1234"},"organizerBusySlotsPeriod":{"events":[{"startDate":"2026-10-06 10:30","endDate":"2026-10-06 11:15","userIds":["000000000000000000000000"]},{"startDate":"2026-10-06 12:30","endDate":"2026-10-06 14:00","userIds":["000000000000000000000000"]},{"startDate":"2026-10-06 14:00","endDate":"2026-10-06 14:30","userIds":["000000000000000000000000"]},{"startDate":"2026-10-06 16:00","endDate":"2026-10-06 16:30","userIds":["000000000000000000000000"]},{"startDate":"2026-10-06 18:00","endDate":"2026-10-06 18:30","bufferBefore":0,"bufferAfter":0,"userIds":["000000000000000000000000"]},{"startDate":"2026-10-07 14:30","endDate":"2026-10-07 15:00","userIds":["000000000000000000000000"]},{"startDate":"2026-10-07 19:30","endDate":"2026-10-07 20:00","bufferBefore":0,"bufferAfter":0,"userIds":["000000000000000000000000"]},{"startDate":"2026-10-07 20:00","endDate":"2026-10-07 23:00","userIds":["000000000000000000000000"]},{"startDate":"2026-10-08 09:00","endDate":"2026-10-08 12:00","userIds":["000000000000000000000000"]},{"startDate":"2026-10-08 11:00","endDate":"2026-10-08 11:30","userIds":["000000000000000000000000"]},{"startDate":"2026-10-08 11:00","endDate":"2026-10-08 11:30","userIds":["000000000000000000000000"]},{"startDate":"2026-10-08 14:30","endDate":"2026-10-08 15:00","userIds":["000000000000000000000000"]},{"startDate":"2026-10-08 18:00","endDate":"2026-10-08 22:00","userIds":["000000000000000000000000"]},{"startDate":"2026-10-08 20:00","endDate":"2026-10-08 23:00","userIds":["000000000000000000000000"]},{"startDate":"2026-10-09 10:30","endDate":"2026-10-09 11:15","userIds":["000000000000000000000000"]},{"startDate":"2026-10-09 17:00","endDate":"2026-10-09 23:00","userIds":["000000000000000000000000"]},{"startDate":"2026-10-10 16:00","endDate":"2026-10-10 18:00","userIds":["000000000000000000000000"]},{"startDate":"2026-10-12 16:00","endDate":"2026-10-12 16:30","userIds":["000000000000000000000000"]},{"startDate":"2026-10-12 16:00","endDate":"2026-10-12 16:30","userIds":["000000000000000000000000"]},{"startDate":"2026-10-12 20:30","endDate":"2026-10-12 22:30","userIds":["000000000000000000000000"]},{"startDate":"2026-10-13 10:30","endDate":"2026-10-13 11:15","userIds":["000000000000000000000000"]},{"startDate":"2026-10-13 12:00","endDate":"2026-10-13 12:30","bufferBefore":0,"bufferAfter":0,"userIds":["000000000000000000000000"]},{"startDate":"2026-10-13 14:00","endDate":"2026-10-13 14:30","userIds":["000000000000000000000000"]},{"startDate":"2026-10-13 18:00","endDate":"2026-10-13 18:45","bufferBefore":0,"bufferAfter":0,"userIds":["000000000000000000000000"]},{"startDate":"2026-10-14 14:30","endDate":"2026-10-14 15:00","userIds":["000000000000000000000000"]},{"startDate":"2026-10-14 17:00","endDate":"2026-10-14 17:45","userIds":["000000000000000000000000"]},{"startDate":"2026-10-14 20:00","endDate":"2026-10-14 23:00","userIds":["000000000000000000000000"]},{"startDate":"2026-10-15 14:30","endDate":"2026-10-15 15:00","userIds":["000000000000000000000000"]},{"startDate":"2026-10-16 10:30","endDate":"2026-10-16 11:15","userIds":["000000000000000000000000"]},{"startDate":"2026-10-16 11:15","endDate":"2026-10-16 12:00","userIds":["000000000000000000000000"]},{"startDate":"2026-10-17 17:00","endDate":"2026-10-17 22:00","userIds":["000000000000000000000000"]},{"startDate":"2026-10-18 13:00","endDate":"2026-10-18 16:00","userIds":["000000000000000000000000"]},{"startDate":"2026-10-19 16:00","endDate":"2026-10-19 16:30","userIds":["000000000000000000000000"]},{"startDate":"2026-10-19 16:00","endDate":"2026-10-19 16:30","userIds":["000000000000000000000000"]},{"startDate":"2026-10-19 20:30","endDate":"2026-10-19 22:30","userIds":["000000000000000000000000"]},{"startDate":"2026-10-20 10:30","endDate":"2026-10-20 11:15","userIds":["000000000000000000000000"]},{"startDate":"2026-10-20 14:00","endDate":"2026-10-20 14:30","userIds":["000000000000000000000000"]},{"startDate":"2026-10-06 14:30","endDate":"2026-10-06 15:00","bufferBefore":0,"bufferAfter":0,"userIds":["000000000000000000000000"]},{"startDate":"2026-10-07 19:30","endDate":"2026-10-07 20:00","bufferBefore":0,"bufferAfter":0,"userIds":["000000000000000000000000"]},{"startDate":"2026-10-13 12:00","endDate":"2026-10-13 12:30","bufferBefore":0,"bufferAfter":0,"userIds":["000000000000000000000000"]},{"startDate":"2026-10-13 18:00","endDate":"2026-10-13 18:45","bufferBefore":0,"bufferAfter":0,"userIds":["000000000000000000000000"]}],"startDate":"2026-10-06 02:00","endDate":"2026-10-20 17:41"}}}
+
+Data loaded by the page from /api/invites/abcd1234:
+{"status":200,"data":{"invite":{"design":{"dateStep":{"showProfileInfoWithStory":true,"storyFocalPoint":{"x":0,"y":0},"storyShape":"framed"},"layoutType":"cover_photo"},"organizer":{"subscription":"FREE","intro":{"location":"Somewhere","position":"Consultant"},"profilePage":{"design":{"showProfileInfoWithStory":true,"storyFocalPoint":{"x":0,"y":0}}},"theme":{"colors":{"background":"#fbfcfd","accent":"#1a73e8","buttonBackground":"#1a73e8","buttonText":"#ffffff","containerBackground":"#ffffff","text":"#000000"},"containerBackgroundOpacity":0.9,"fontFamily":"Noto Sans"},"flags":{"hasSeenIntroPrompt":true,"hasDefaultLinks":true,"hasEditedInvite":true,"hasAcceptedInvite":true},"firstName":"Alex","lastName":"Example","timezone":"Europe/Rome","integrations":[{"providerName":"google.com","scopes":["calendar","conference"],"calendars":[{"shouldRead":true,"shouldWrite":true}]}],"dateCreated":"2023-10-07 17:02","locale":"en","username":"alex-example","defaultConferenceType":"google.com","defaultWeekAvailabilityTimezone":"Europe/Rome","startOfWeek":1,"id":"000000000000000000000000"},"name":"30 Minute Meeting","inviteType":"one_on_one","availabilityTimezone":"Europe/Rome","slotIncrement":30,"displayedTimezone":"local","minNotice":180,"bufferBefore":0,"bufferAfter":0,"availabilityDateRangeType":"days_from_today","availabilityNumDays":14,"isDefault":true,"availability":[{"duration":570,"rrule":"repeats weekly on Mon at 10:30 (organizer's time zone)","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"},{"duration":570,"rrule":"repeats weekly on Tue at 10:30 (organizer's time zone)","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"},{"duration":570,"rrule":"repeats weekly on Wed at 10:30 (organizer's time zone)","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"},{"duration":570,"rrule":"repeats weekly on Fri at 10:30 (organizer's time zone)","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"},{"duration":570,"rrule":"repeats weekly on Thu at 10:30 (organizer's time zone)","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"},{"duration":1440,"rrule":"EXDATE:20260907T000000Z","availabilityTimezone":"Europe/Rome","userId":"000000000000000000000000"}],"reminderNotifications":[{"isEnabled":true,"notificationType":"email","reminderTimeMins":1440,"_id":"000000000000000000000000","id":"000000000000000000000000"},{"isEnabled":true,"notificationType":"sms","reminderTimeMins":1440,"_id":"000000000000000000000000","id":"000000000000000000000000"},{"isEnabled":true,"notificationType":"email_followup","reminderTimeMins":1440,"_id":"000000000000000000000000","id":"000000000000000000000000"}],"dateCreated":"2023-10-07 17:04","isEmailRemindersEnabled":true,"eventNameType":"attendees","maxNumberEvents":{"limits":[{"amount":4,"unit":"WEEK","_id":"000000000000000000000000","id":"000000000000000000000000"}],"_id":"000000000000000000000000","id":"000000000000000000000000"},"paymentSettings":{"currency":"USD","_id":"000000000000000000000000","id":"000000000000000000000000"},"profilePageSettings":9999,"inviteAvailabilityType":"saved","locationOptions":["google"],"durationOptions":[30],"availabilityStartEndDates":{"startDate":"2026-09-07 02:00","endDate":"2026-09-21 02:00"},"redirectDelay":1,"shouldMaximizeAvailability":true,"hasEvent":true,"id":"abcd1234"},"organizerBusySlotsPeriod":{"startDate":"2026-10-20 17:41","endDate":"2026-10-20 17:41"}}}
