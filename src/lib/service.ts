@@ -131,7 +131,7 @@ export type MeetingView = {
   slug: string;
   title: string | null;
   durationMin: number;
-  participants: { id: string; name: string; tz: string; summary: string }[];
+  participants: { id: string; name: string; tz: string }[];
   slots: Slot[];
 };
 
@@ -147,7 +147,7 @@ export async function getMeetingView(slug: string): Promise<MeetingView> {
     slug,
     title: m.title,
     durationMin: m.durationMin,
-    participants: rows.map((r) => ({ id: r.id, name: r.name, tz: r.tz, summary: r.parsed.summary })),
+    participants: rows.map((r) => ({ id: r.id, name: r.name, tz: r.tz })),
     slots,
   };
 }

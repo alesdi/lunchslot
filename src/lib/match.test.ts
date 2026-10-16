@@ -10,7 +10,6 @@ const base: ParsedAvailability = {
   bookingStarts: [],
   bookingSlotMinutes: null,
   preferences: [],
-  summary: "",
   unparseable: false,
 };
 const avail = (p: Partial<ParsedAvailability>): ParsedAvailability => ({ ...base, ...p });

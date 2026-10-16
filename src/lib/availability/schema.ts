@@ -45,9 +45,6 @@ export const ParsedAvailability = z.object({
     ),
   bookingSlotMinutes: z.number().int().nullable().describe("Booking pages only: length of the bookable event in minutes, e.g. 30."),
   preferences: z.array(Preference),
-  summary: z
-    .string()
-    .describe('One short line describing WHEN the person is available, max ~80 chars, e.g. "Weekdays 10:30-20:00, around calendar events". Not the page title.'),
   unparseable: z.boolean().describe("True when the input contains no usable availability information."),
 });
 export type ParsedAvailability = z.infer<typeof ParsedAvailability>;

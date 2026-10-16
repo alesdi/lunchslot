@@ -210,7 +210,6 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
                   <div className="min-w-0">
                     <span className="font-semibold">{p.name}</span>
                     {p.id === me?.id && <span className="ml-2 text-sm text-muted">(you)</span>}
-                    <p className="truncate text-sm text-muted">{p.summary}</p>
                   </div>
                   {p.id === me?.id && (
                     <div className="flex shrink-0 gap-3 text-sm">
