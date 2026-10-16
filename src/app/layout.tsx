@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Schibsted_Grotesk } from "next/font/google";
-import Link from "next/link";
+import { Logo } from "@/components/logo";
 import "./globals.css";
 
 const schibsted = Schibsted_Grotesk({ variable: "--font-schibsted", subsets: ["latin"] });
@@ -24,9 +24,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full font-sans">
         <div className="mx-auto flex min-h-dvh max-w-[40rem] flex-col px-4 sm:px-6">
           <header className="flex items-center justify-between pt-6 pb-10 sm:pt-8">
-            <Link href="/" className="text-lg font-extrabold tracking-tight">
-              lunchslot
-            </Link>
+            <Logo />
           </header>
           <main className="flex-1">{children}</main>
           <footer className="py-10 text-sm text-muted">

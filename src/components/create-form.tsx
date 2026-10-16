@@ -80,11 +80,11 @@ export function CreateForm() {
           How long?
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <div role="radiogroup" aria-labelledby="duration-label" className="flex rounded-lg border border-line bg-surface p-1">
+          <div role="radiogroup" aria-labelledby="duration-label" className="flex flex-wrap rounded-lg border border-line bg-surface p-1">
             {DURATIONS.map((d) => (
               <label
                 key={d}
-                className={`cursor-pointer rounded-md px-3 py-1.5 text-sm has-[:focus-visible]:outline-2 ${
+                className={`cursor-pointer rounded-md px-3 py-1.5 text-sm whitespace-nowrap has-[:focus-visible]:outline-2 ${
                   !custom && duration === d ? "bg-ink font-semibold text-paper" : "text-muted hover:text-ink"
                 }`}
               >
@@ -102,7 +102,7 @@ export function CreateForm() {
               </label>
             ))}
             <label
-              className={`cursor-pointer rounded-md px-3 py-1.5 text-sm has-[:focus-visible]:outline-2 ${
+              className={`cursor-pointer rounded-md px-3 py-1.5 text-sm whitespace-nowrap has-[:focus-visible]:outline-2 ${
                 custom ? "bg-ink font-semibold text-paper" : "text-muted hover:text-ink"
               }`}
             >

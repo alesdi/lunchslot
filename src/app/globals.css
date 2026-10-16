@@ -9,6 +9,7 @@
   --yolk: #f6c42a;
   --yolk-ink: #2a2100;
   --warn: #b4410f;
+  --crust: #dc9a1c;
   color-scheme: light;
 }
 
@@ -22,6 +23,7 @@
     --yolk: #f6c42a;
     --yolk-ink: #2a2100;
     --warn: #f08a5d;
+    --crust: #d18f12;
     color-scheme: dark;
   }
 }
@@ -58,4 +60,45 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .slot-arrive { animation: none; }
+}
+
+/* The logo: the picked slice sits slightly out of the pie and slides further out on hover or tap. */
+.pizza-slice {
+  transform: translate(1.2px, -2.1px);
+  transition: transform 0.25s cubic-bezier(0.3, 1.5, 0.6, 1);
+}
+.logo-mark:hover .pizza-slice,
+.logo-mark:focus-visible .pizza-slice,
+.logo-mark[data-open] .pizza-slice {
+  transform: translate(2.5px, -4.3px);
+}
+
+/* Speech bubble under the logo, its tail pointing up at the pizza. */
+.bubble::before,
+.bubble::after {
+  content: "";
+  position: absolute;
+  left: 0.55rem;
+  border: 10px solid transparent;
+  border-top-width: 0;
+  border-bottom-width: 12px;
+}
+.bubble::before {
+  bottom: 100%;
+  border-bottom-color: var(--ink);
+}
+.bubble::after {
+  bottom: calc(100% - 3px);
+  border-bottom-color: var(--surface);
+}
+@keyframes bubble-pop {
+  from { opacity: 0; transform: translateY(-6px) scale(0.92); }
+}
+.bubble {
+  transform-origin: 1.2rem 0;
+  animation: bubble-pop 0.22s cubic-bezier(0.3, 1.4, 0.6, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bubble { animation: none; }
+  .pizza-slice { transition: none; }
 }
