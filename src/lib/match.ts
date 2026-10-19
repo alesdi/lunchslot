@@ -63,8 +63,6 @@ function scoreSlot(s: number, e: number, people: Prepared[], now: number) {
         if (ov > 0) {
           score -= pref.weight * 10 * Math.max(0.5, ov / dur);
           reasons.push({ tone: "warn", text: `${who} prefers to avoid ${pref.label}` });
-        } else if (windows.some((w) => Math.abs(w.s - s) < 12 * HOUR)) {
-          reasons.push({ tone: "good", text: `Avoids ${who}'s ${pref.label}` });
         }
       } else if (ov > 0) {
         score += pref.weight * 6 * (ov / dur);

@@ -130,7 +130,7 @@ describe("findSlots", () => {
     );
     const h = new Date(slots[0].start).getUTCHours();
     expect(h < 12 || h >= 14).toBe(true);
-    expect(slots[0].reasons).toContainEqual({ tone: "good", text: "Avoids Ana's lunch" });
+    expect(slots[0].reasons).toEqual([]);
   });
 
   it("returns at most 3 non-overlapping slots, preferring different days", () => {
