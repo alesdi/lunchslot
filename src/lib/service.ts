@@ -1,10 +1,11 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, asc, eq, lt } from "drizzle-orm";
+import { and, asc, eq, lt, sql } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
-import { db, meetings, participants } from "@/db";
+import { db, meetings, participants, type ParticipantSource } from "@/db";
 import { checkBudget, clientKey, limitMeetingCreate, limitParse, recordSpend } from "./guard";
 import { ingest } from "./ingest";
+import { findUrls } from "./ingest/page-reader";
 import { findSlots, type Slot } from "./match";
 import { UserError } from "./errors";
 
@@ -12,6 +13,9 @@ const notFound = (msg = "Not found.") => new UserError(msg, 404);
 
 const MAX_PARTICIPANTS = 20;
 const MEETING_TTL_DAYS = 60;
+const REFRESH_EVERY_HOURS = 24;
+// Each link read launches its own headless Chromium, so keep a handful in flight at once.
+const REFRESH_CONCURRENCY = 3;
 const newSlug = customAlphabet("23456789abcdefghjkmnpqrstuvwxyz", 10);
 
 const isTz = (tz: string) => {
@@ -33,6 +37,9 @@ export const SubmissionInput = z.object({
     .default([]),
 });
 export type SubmissionInput = z.infer<typeof SubmissionInput>;
+
+const sourceOf = (input: SubmissionInput): ParticipantSource =>
+  findUrls(input.text).length ? "link" : input.images.length ? "screenshot" : "text";
 
 export const CreateMeetingInput = z.object({
   title: z.string().trim().max(80, "Keep the title under 80 characters.").default(""),
@@ -102,18 +109,19 @@ export async function upsertParticipant(
   }
 
   const parsed = await parseSubmission(req, input, m.horizonDays);
+  const source = sourceOf(input);
 
   if (existing) {
     await db()
       .update(participants)
-      .set({ name: input.name, tz: input.tz, rawText: input.text, parsed, updatedAt: new Date() })
+      .set({ name: input.name, tz: input.tz, rawText: input.text, source, parsed, updatedAt: new Date() })
       .where(eq(participants.id, existing.id));
     return { participantId: existing.id, editToken: input.editToken! };
   }
   const editToken = randomBytes(24).toString("base64url");
   const [p] = await db()
     .insert(participants)
-    .values({ meetingId: slug, name: input.name, tz: input.tz, rawText: input.text, parsed, editTokenHash: hashToken(editToken) })
+    .values({ meetingId: slug, name: input.name, tz: input.tz, rawText: input.text, source, parsed, editTokenHash: hashToken(editToken) })
     .returning({ id: participants.id });
   return { participantId: p.id, editToken };
 }
@@ -131,14 +139,21 @@ export type MeetingView = {
   slug: string;
   title: string | null;
   durationMin: number;
-  participants: { id: string; name: string; tz: string }[];
+  participants: { id: string; name: string; tz: string; source: ParticipantSource; updatedAt: string }[];
   slots: Slot[];
 };
 
 export async function getMeetingView(slug: string): Promise<MeetingView> {
   const m = await getMeetingRow(slug);
   const rows = await db()
-    .select({ id: participants.id, name: participants.name, tz: participants.tz, parsed: participants.parsed })
+    .select({
+      id: participants.id,
+      name: participants.name,
+      tz: participants.tz,
+      source: participants.source,
+      parsed: participants.parsed,
+      updatedAt: participants.updatedAt,
+    })
     .from(participants)
     .where(eq(participants.meetingId, slug))
     .orderBy(asc(participants.createdAt));
@@ -147,9 +162,60 @@ export async function getMeetingView(slug: string): Promise<MeetingView> {
     slug,
     title: m.title,
     durationMin: m.durationMin,
-    participants: rows.map((r) => ({ id: r.id, name: r.name, tz: r.tz })),
+    participants: rows.map((r) => ({ id: r.id, name: r.name, tz: r.tz, source: r.source, updatedAt: r.updatedAt.toISOString() })),
     slots,
   };
+}
+
+/**
+ * Re-reads every calendar link in the meeting so the slots reflect bookings made since. Anyone can ask,
+ * but the work runs at most once per REFRESH_EVERY_HOURS per meeting; otherwise this is a no-op.
+ * Written and screenshot entries are kept as submitted.
+ */
+export async function refreshMeeting(slug: string): Promise<MeetingView> {
+  const m = await getMeetingRow(slug);
+  // Claim the refresh atomically so concurrent clicks don't each re-read every link.
+  // A new meeting counts as fresh: none of its links can be older than the meeting itself.
+  const [claimed] = await db()
+    .update(meetings)
+    .set({ refreshedAt: new Date() })
+    .where(
+      and(
+        eq(meetings.id, slug),
+        sql`coalesce(${meetings.refreshedAt}, ${meetings.createdAt}) < now() - make_interval(hours => ${REFRESH_EVERY_HOURS})`,
+      ),
+    )
+    .returning({ refreshedAt: meetings.refreshedAt });
+  if (!claimed) return getMeetingView(slug);
+
+  const queue = await db()
+    .select()
+    .from(participants)
+    .where(and(eq(participants.meetingId, slug), eq(participants.source, "link")));
+  const startedAt = claimed.refreshedAt!;
+  const refreshOne = async (p: (typeof queue)[number]) => {
+    try {
+      const parsed = await ingest(
+        { text: p.rawText, images: [], tz: p.tz, now: Date.now(), horizonDays: m.horizonDays },
+        // No per-visitor rate limit: the daily claim above already caps how often this runs.
+        { beforeLlm: checkBudget, afterLlm: recordSpend },
+      );
+      await db()
+        .update(participants)
+        .set({ parsed, updatedAt: new Date() })
+        // Skip if the participant edited their entry while we were reading the old link.
+        .where(and(eq(participants.id, p.id), lt(participants.updatedAt, startedAt)));
+    } catch (e) {
+      // Keep the last good reading: the link may be down, or today's budget may be spent.
+      if (!(e instanceof UserError)) console.error(e);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: REFRESH_CONCURRENCY }, async () => {
+      for (let p = queue.shift(); p; p = queue.shift()) await refreshOne(p);
+    }),
+  );
+  return getMeetingView(slug);
 }
 
 /** Raw text of your own entry, so you can edit it. */

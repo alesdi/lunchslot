@@ -84,6 +84,22 @@ export function useViewerTz(): string | null {
   return useSyncExternalStore(subscribe, () => read(TZ_KEY) || browserTz(), () => null);
 }
 
+// A clock that ticks every 30 s, for relative times. Null on the server so they don't cause hydration mismatches.
+let clock = 0;
+const readClock = () => clock || (clock = Date.now());
+function subscribeClock(cb: () => void) {
+  clock = Date.now();
+  const id = setInterval(() => {
+    clock = Date.now();
+    cb();
+  }, 30_000);
+  return () => clearInterval(id);
+}
+
+export function useNow(): number | null {
+  return useSyncExternalStore(subscribeClock, readClock, () => null);
+}
+
 export function isValidTz(tz: string): boolean {
   try {
     new Intl.DateTimeFormat("en", { timeZone: tz });

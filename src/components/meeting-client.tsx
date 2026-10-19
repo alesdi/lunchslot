@@ -1,12 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { ParticipantSource } from "@/db/schema";
+import { timeAgo } from "@/lib/format";
 import type { MeetingView } from "@/lib/service";
 import {
   copyText,
   isValidTz,
   postJson,
   storage,
+  useNow,
   useOwner,
   useRecentMeetings,
   useStoredName,
@@ -22,11 +25,13 @@ import { TimezoneField } from "./timezone-field";
 
 const POLL_MS = 5000;
 const INVITEE_STEPS = ["Your availability", "Best times"];
+const SOURCE_LABELS: Record<ParticipantSource, string> = { link: "Calendar link", screenshot: "Screenshot", text: "Written" };
 
 export function MeetingClient({ initial }: { initial: MeetingView }) {
   const slug = initial.slug;
   const [view, setView] = useState(initial);
   const viewerTz = useViewerTz();
+  const now = useNow();
   const owner = useOwner(slug);
   const isCreator = useRecentMeetings().some((m) => m.slug === slug);
   const [editing, setEditing] = useState(false);
@@ -42,6 +47,7 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
   const [images, setImages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshState, setRefreshState] = useState<"idle" | "busy" | "done">("idle");
 
   const refresh = useCallback(async () => {
     const res = await fetch(`/api/meetings/${slug}`, { cache: "no-store" });
@@ -67,6 +73,20 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
     if (await copyText(`${location.origin}/m/${slug}`)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
+    }
+  }
+
+  // The server decides whether links are actually re-read (at most daily); either way we show the latest view.
+  async function refreshLinks() {
+    setError(null);
+    setRefreshState("busy");
+    try {
+      setView(await postJson<MeetingView>(`/api/meetings/${slug}/refresh`, {}));
+      setRefreshState("done");
+      setTimeout(() => setRefreshState("idle"), 2500);
+    } catch (e) {
+      setError((e as Error).message);
+      setRefreshState("idle");
     }
   }
 
@@ -184,9 +204,19 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
       ) : (
         <div className="space-y-12">
           <section aria-labelledby="best-times">
-            <h2 id="best-times" className="mb-1 text-xl font-bold">
-              Best times
-            </h2>
+            <div className="mb-1 flex items-baseline justify-between gap-4">
+              <h2 id="best-times" className="text-xl font-bold">
+                Best times
+              </h2>
+              <button
+                type="button"
+                onClick={refreshLinks}
+                disabled={refreshState === "busy"}
+                className="text-sm text-muted underline underline-offset-2 hover:text-ink disabled:no-underline"
+              >
+                {refreshState === "busy" ? "Refreshing…" : refreshState === "done" ? "Up to date" : "Refresh"}
+              </button>
+            </div>
             <p className="mb-4 text-muted">{viewerTz && <>Shown in {viewerTz.replace(/_/g, " ")}.</>}</p>
             {viewerTz ? <SlotList slots={view.slots} total={total} tz={viewerTz} /> : <div className="h-40" />}
             {!joined && (
@@ -210,6 +240,10 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
                   <div className="min-w-0">
                     <span className="font-semibold">{p.name}</span>
                     {p.id === me?.id && <span className="ml-2 text-sm text-muted">(you)</span>}
+                    <div className="text-sm text-muted">
+                      {SOURCE_LABELS[p.source]}
+                      {now !== null && <>, updated {timeAgo(p.updatedAt, now)}</>}
+                    </div>
                   </div>
                   {p.id === me?.id && (
                     <div className="flex shrink-0 gap-3 text-sm">

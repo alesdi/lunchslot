@@ -10,7 +10,12 @@ export const meetings = pgTable("meetings", {
   horizonDays: integer("horizon_days").notNull().default(21),
   createdAt: tsz("created_at").notNull().defaultNow(),
   expiresAt: tsz("expires_at").notNull(),
+  /** Last time calendar links were re-read; refreshes run at most once a day. */
+  refreshedAt: tsz("refreshed_at"),
 });
+
+export const PARTICIPANT_SOURCES = ["link", "screenshot", "text"] as const;
+export type ParticipantSource = (typeof PARTICIPANT_SOURCES)[number];
 
 export const participants = pgTable(
   "participants",
@@ -22,6 +27,7 @@ export const participants = pgTable(
     name: text("name").notNull(),
     tz: text("tz").notNull(),
     rawText: text("raw_text").notNull().default(""),
+    source: text("source", { enum: PARTICIPANT_SOURCES }).notNull().default("text"),
     parsed: jsonb("parsed").$type<ParsedAvailability>().notNull(),
     editTokenHash: text("edit_token_hash").notNull(),
     createdAt: tsz("created_at").notNull().defaultNow(),
