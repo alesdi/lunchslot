@@ -68,6 +68,7 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
   const joined = !!me;
   const showForm = (!joined && !peek) || editing;
   const total = view.participants.length;
+  const idle = view.participants.filter((p) => !p.hasTimes).map((p) => p.name);
 
   async function copyLink() {
     if (await copyText(`${location.origin}/m/${slug}`)) {
@@ -218,7 +219,7 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
               </button>
             </div>
             <p className="mb-4 text-muted">{viewerTz && <>Shown in {viewerTz.replace(/_/g, " ")}.</>}</p>
-            {viewerTz ? <SlotList slots={view.slots} total={total} tz={viewerTz} /> : <div className="h-40" />}
+            {viewerTz ? <SlotList slots={view.slots} total={total - idle.length} idle={idle} tz={viewerTz} /> : <div className="h-40" />}
             {!joined && (
               <button
                 type="button"
@@ -243,6 +244,7 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
                     <div className="text-sm text-muted">
                       {SOURCE_LABELS[p.source]}
                       {now !== null && <>, updated {timeAgo(p.updatedAt, now)}</>}
+                      {!p.hasTimes && <span className="text-warn">. No upcoming times</span>}
                     </div>
                   </div>
                   {p.id === me?.id && (

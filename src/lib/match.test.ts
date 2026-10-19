@@ -106,7 +106,7 @@ describe("findSlots", () => {
   const opts = { durationMin: 30, now: NOW, horizonDays: 14 };
 
   it("finds the overlap across timezones", () => {
-    const slots = findSlots(
+    const { slots } = findSlots(
       [
         person("Ana", "Europe/Rome", { free: [range("2026-10-07", "15:00", "18:00")] }), // 13-16 UTC
         person("Bob", "America/New_York", { free: [range("2026-10-07", "11:00", "12:00")] }), // 15-16 UTC
@@ -118,7 +118,7 @@ describe("findSlots", () => {
   });
 
   it("respects avoid preferences", () => {
-    const slots = findSlots(
+    const { slots } = findSlots(
       [
         person("Ana", "UTC", {
           free: [range("2026-10-07", "11:00", "15:00")],
@@ -134,7 +134,7 @@ describe("findSlots", () => {
   });
 
   it("returns at most 3 non-overlapping slots, preferring different days", () => {
-    const slots = findSlots(
+    const { slots } = findSlots(
       [person("Ana", "UTC", { free: [range(null, "09:00", "17:00", ["mon", "tue", "wed", "thu", "fri"])] })],
       opts,
     );
@@ -143,7 +143,7 @@ describe("findSlots", () => {
   });
 
   it("falls back to best coverage when nobody fully overlaps", () => {
-    const slots = findSlots(
+    const { slots } = findSlots(
       [
         person("Ana", "UTC", { free: [range("2026-10-07", "09:00", "10:00")] }),
         person("Bob", "UTC", { free: [range("2026-10-07", "09:00", "10:00")] }),
@@ -155,7 +155,21 @@ describe("findSlots", () => {
   });
 
   it("ignores slots too close to now", () => {
-    const slots = findSlots([person("Ana", "UTC", { free: [range("2026-10-05", "08:00", "09:30")] })], opts);
+    const { slots } = findSlots([person("Ana", "UTC", { free: [range("2026-10-05", "08:00", "09:30")] })], opts);
     expect(slots).toEqual([]);
+  });
+
+  it("leaves out people whose times have all passed", () => {
+    const { slots, idle } = findSlots(
+      [
+        person("Ana", "UTC", { free: [range("2026-10-07", "09:00", "10:00")] }),
+        person("Bob", "UTC", { free: [range("2026-10-07", "09:00", "10:00")] }),
+        person("Cy", "UTC", { free: [range("2026-10-04", "09:00", "18:00")] }), // yesterday
+        person("Di", "UTC", { free: [range("2026-10-07", "09:00", "09:15")] }), // too short for the meeting
+      ],
+      opts,
+    );
+    expect(idle).toEqual(["Cy", "Di"]);
+    expect(slots[0]).toMatchObject({ everyone: true, available: ["Ana", "Bob"], missing: [] });
   });
 });

@@ -139,7 +139,15 @@ export type MeetingView = {
   slug: string;
   title: string | null;
   durationMin: number;
-  participants: { id: string; name: string; tz: string; source: ParticipantSource; updatedAt: string }[];
+  participants: {
+    id: string;
+    name: string;
+    tz: string;
+    source: ParticipantSource;
+    updatedAt: string;
+    /** False when none of their times are still ahead, so they aren't counted in the slots. */
+    hasTimes: boolean;
+  }[];
   slots: Slot[];
 };
 
@@ -157,12 +165,19 @@ export async function getMeetingView(slug: string): Promise<MeetingView> {
     .from(participants)
     .where(eq(participants.meetingId, slug))
     .orderBy(asc(participants.createdAt));
-  const slots = findSlots(rows, { durationMin: m.durationMin, now: Date.now(), horizonDays: m.horizonDays });
+  const { slots, idle } = findSlots(rows, { durationMin: m.durationMin, now: Date.now(), horizonDays: m.horizonDays });
   return {
     slug,
     title: m.title,
     durationMin: m.durationMin,
-    participants: rows.map((r) => ({ id: r.id, name: r.name, tz: r.tz, source: r.source, updatedAt: r.updatedAt.toISOString() })),
+    participants: rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      tz: r.tz,
+      source: r.source,
+      updatedAt: r.updatedAt.toISOString(),
+      hasTimes: !idle.includes(r.id),
+    })),
     slots,
   };
 }
@@ -207,7 +222,9 @@ export async function refreshMeeting(slug: string): Promise<MeetingView> {
         .where(and(eq(participants.id, p.id), lt(participants.updatedAt, startedAt)));
     } catch (e) {
       // Keep the last good reading: the link may be down, or today's budget may be spent.
-      if (!(e instanceof UserError)) console.error(e);
+      const what = `Refresh of ${slug}/${p.id} (${findUrls(p.rawText)[0]}) failed`;
+      if (e instanceof UserError) console.warn(`${what}: ${e.message}`);
+      else console.error(`${what}:`, e);
     }
   };
   await Promise.all(

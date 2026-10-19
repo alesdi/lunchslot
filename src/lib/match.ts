@@ -93,21 +93,34 @@ function scoreSlot(s: number, e: number, people: Prepared[], now: number) {
   return { score, reasons: sorted.slice(0, 3) };
 }
 
+export type MatchResult = {
+  slots: Slot[];
+  /** Ids of participants with no time left in the window (e.g. they only gave dates that have passed).
+   *  They're left out of the slots entirely, so they don't show up as "missing" from every one. */
+  idle: string[];
+};
+
 export function findSlots(
   participants: MatchParticipant[],
   opts: { durationMin: number; now: number; horizonDays: number; limit?: number },
-): Slot[] {
+): MatchResult {
   const limit = opts.limit ?? 3;
-  if (participants.length === 0) return [];
   const dur = opts.durationMin * MIN;
   const from = Math.ceil((opts.now + MIN_LEAD) / GRID) * GRID;
   const to = opts.now + opts.horizonDays * DAY;
 
-  const people: Prepared[] = participants.map((p) => ({
+  const prepared: Prepared[] = participants.map((p) => ({
     ...p,
     free: expandAvailability(p.parsed, p.tz, from, to),
     prefs: expandPreferences(p.parsed, p.tz, from, to),
   }));
+  const people = prepared.filter((p) => p.free.some((i) => i.e - i.s >= dur));
+  const idle = prepared.filter((p) => !people.includes(p)).map((p) => p.id);
+  return { slots: pickSlots(people, dur, from, to, limit, opts.now), idle };
+}
+
+function pickSlots(people: Prepared[], dur: number, from: number, to: number, limit: number, now: number): Slot[] {
+  if (people.length === 0) return [];
 
   // Enumerate grid starts and who can make each one.
   type Cand = { s: number; e: number; who: Prepared[] };
@@ -128,7 +141,7 @@ export function findSlots(
   if (people.length > 1 && best < 2) return [];
 
   const scored = cands
-    .map((c) => ({ ...c, ...scoreSlot(c.s, c.e, c.who, opts.now) }))
+    .map((c) => ({ ...c, ...scoreSlot(c.s, c.e, c.who, now) }))
     .sort((a, b) => b.score - a.score || a.s - b.s);
 
   // Pick top slots: first prefer distinct days, then fill with any non-overlapping.
