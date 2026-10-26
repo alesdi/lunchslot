@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertPublicUrl, compactJson, countEpochs, findUrls, humanizeRRules, localizeEpochs, localizeTimestamps } from "./page-reader";
+import { assertPublicUrl, compactJson, countEpochs, findUrls, humanizeRRules, localizeEpochs, localizeTimestamps, unreadablePageError } from "./page-reader";
 
 describe("page reader helpers", () => {
   it("finds the first link in free text", () => {
@@ -56,6 +56,15 @@ describe("page reader helpers", () => {
     expect(humanizeRRules("DTSTART:20261006T000000Z\\nRRULE:FREQ=WEEKLY;BYDAY=MO,TU;BYHOUR=9;BYMINUTE=0")).toBe(
       "repeats weekly on Mon, Tue at 09:00 (organizer's time zone)",
     );
+  });
+
+  it("recognizes Google's booking error page, and only that", () => {
+    const err = "Appointments\nThere was an error loading this appointment page\nIf the problem persists, see the Google Workspace Status Dashboard";
+    expect(unreadablePageError("https://calendar.google.com/calendar/appointments/schedules/abc", err)?.message).toMatch(
+      /Google Calendar booking pages can't be read/,
+    );
+    expect(unreadablePageError("https://calendar.google.com/calendar/appointments/schedules/abc", "Select an appointment time")).toBeNull();
+    expect(unreadablePageError("https://example.com/", err)).toBeNull();
   });
 
   it("rejects private and local addresses", async () => {

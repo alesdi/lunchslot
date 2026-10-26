@@ -215,6 +215,22 @@ export function compactJson(body: string, max = MAX_JSON_EACH): string {
 }
 
 /**
+ * Google Calendar booking pages load their slots from an API that refuses requests from cloud servers,
+ * so on Vercel the page renders an error instead. Say so plainly rather than "no open times found".
+ */
+export function unreadablePageError(pageUrl: string, text: string): LinkError | null {
+  let host = "";
+  try {
+    host = new URL(pageUrl).hostname;
+  } catch {}
+  if (host === "calendar.google.com" && /error loading this appointment page/i.test(text))
+    return new LinkError(
+      "Google Calendar booking pages can't be read automatically. Add a screenshot of the open times, or type them instead.",
+    );
+  return null;
+}
+
+/**
  * Month-view booking pages only load the month on screen, so late in a month most of the meeting's
  * horizon is missing. Page once to the next month, if the page has a button for it, to load that too.
  */
@@ -283,6 +299,8 @@ export async function readPage(rawUrl: string, tz: string): Promise<string> {
     await Promise.all(pending);
     const title = await page.title().catch(() => "");
     const text = await page.evaluate(() => document.body?.innerText ?? "").catch(() => "");
+    const unreadable = unreadablePageError(page.url(), text);
+    if (unreadable) throw unreadable;
     await showNextMonth(page);
     await Promise.all(pending);
 
