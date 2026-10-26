@@ -2,7 +2,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { TZDate } from "@date-fns/tz";
 import { format } from "date-fns";
-import type { Browser } from "puppeteer-core";
+import type { Browser, Page } from "puppeteer-core";
 import { UserError } from "../errors";
 
 // Reads any scheduling/booking link (Calendly, cal.com, zcal, SavvyCal, Google appointment pages, …)
@@ -11,6 +11,10 @@ import { UserError } from "../errors";
 
 const URL_RE = /https?:\/\/[^\s<>"')\]]+/gi;
 const ISO_RE = /\b(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})\b/g;
+// A whole JSON value (number or string) of 10 or 13 digits: Unix seconds or milliseconds.
+const EPOCH_RE = /(?<=[[,:]\s*)"?(\d{10}|\d{13})"?(?=\s*[\],}])/g;
+// Epoch values only count as timestamps when they're near now; elsewhere they're more likely IDs.
+const EPOCH_WINDOW = { pastMs: 2 * 864e5, futureMs: 400 * 864e5 };
 const MAX_TEXT = 6_000;
 const MAX_JSON_EACH = 25_000;
 const MAX_DIGEST = 40_000;
@@ -98,11 +102,33 @@ export function localizeTimestamps(text: string, tz: string): string {
   });
 }
 
-/** Generic shrinking: drop empty values and collapse single-key wrappers like {"time": "…"} to their value. */
+const epochMs = (digits: string, now: number): number | null => {
+  const t = digits.length === 10 ? Number(digits) * 1000 : Number(digits);
+  return t >= now - EPOCH_WINDOW.pastMs && t <= now + EPOCH_WINDOW.futureMs ? t : null;
+};
+
+export const countEpochs = (json: string, now = Date.now()) =>
+  [...json.matchAll(EPOCH_RE)].filter((m) => epochMs(m[1], now) !== null).length;
+
+/**
+ * Some booking tools (Google Calendar appointment pages among them) send slots as Unix timestamps.
+ * Rewrites those JSON values to quoted wall-clock time in `tz`, like localizeTimestamps does for ISO.
+ */
+export function localizeEpochs(json: string, tz: string, now = Date.now()): string {
+  return json.replace(EPOCH_RE, (m, digits: string) => {
+    const t = epochMs(digits, now);
+    return t === null ? m : `"${format(new TZDate(t, tz), "yyyy-MM-dd HH:mm")}"`;
+  });
+}
+
+/**
+ * Generic shrinking: drop empty values and collapse single-key wrappers like {"time": "…"} and single-item
+ * arrays like [["…"]] to their value.
+ */
 function prune(v: unknown): unknown {
   if (Array.isArray(v)) {
     const arr = v.map(prune).filter((x) => x !== undefined);
-    return arr.length ? arr : undefined;
+    return arr.length > 1 ? arr : arr[0];
   }
   if (v && typeof v === "object") {
     const entries = Object.entries(v)
@@ -120,18 +146,18 @@ function prune(v: unknown): unknown {
 
 const LOCAL_TS = /^(\d{4}-\d{2}-\d{2}) (\d{2}):(\d{2})$/;
 
-/** Splits an array item into its single local timestamp and a signature of everything else. */
+/** Splits an array item (string, object or tuple) into its single local timestamp and a signature of everything else. */
 function timestampOf(item: unknown): { date: string; min: number; sig: string } | null {
   let ts: string | undefined;
   let sig = "";
   if (typeof item === "string") ts = item;
-  else if (item && typeof item === "object" && !Array.isArray(item)) {
+  else if (item && typeof item === "object") {
     const entries = Object.entries(item);
     const stamped = entries.filter(([, v]) => typeof v === "string" && LOCAL_TS.test(v));
     if (stamped.length !== 1) return null;
     ts = stamped[0][1] as string;
-    const rest = Object.fromEntries(entries.filter(([k]) => k !== stamped[0][0]));
-    sig = Object.keys(rest).length ? ` ${JSON.stringify(rest)}` : "";
+    const rest = entries.filter(([k]) => k !== stamped[0][0]);
+    if (rest.length) sig = ` ${JSON.stringify(Array.isArray(item) ? rest.map(([, x]) => x) : Object.fromEntries(rest))}`;
   }
   const m = ts ? LOCAL_TS.exec(ts) : null;
   return m ? { date: m[1], min: Number(m[2]) * 60 + Number(m[3]), sig } : null;
@@ -163,6 +189,8 @@ function compressRuns(v: unknown): unknown {
         stamps[j + 1]!.min - stamps[j]!.min === step
       )
         j++;
+      // Two starts aren't a run: "every 90 min from 09:30 through 11:00" reads as one free block.
+      if (j === i + 1) j = i;
       out.push(
         j > i
           ? `starts every ${step} min from ${a.date} ${hhmm(a.min)} through ${hhmm(stamps[j]!.min)}${a.sig}`
@@ -186,10 +214,29 @@ export function compactJson(body: string, max = MAX_JSON_EACH): string {
   return out.length > max ? `${out.slice(0, max)}… (truncated: ignore the last, incomplete day)` : out;
 }
 
+/**
+ * Month-view booking pages only load the month on screen, so late in a month most of the meeting's
+ * horizon is missing. Page once to the next month, if the page has a button for it, to load that too.
+ */
+async function showNextMonth(page: Page) {
+  const clicked = await page
+    // No named helpers in here: bundlers can wrap them in calls that don't exist inside the page.
+    .evaluate(() => {
+      const next = [...document.querySelectorAll<HTMLElement>("button, [role=button]")].find((el) =>
+        /^(go to |view |show )?next month$/i.test((el.getAttribute("aria-label") || el.textContent || "").trim()),
+      );
+      next?.click();
+      return !!next;
+    })
+    .catch(() => false);
+  if (!clicked) return;
+  await page.waitForNetworkIdle({ idleTime: 700, timeout: 5_000 }).catch(() => {});
+}
+
 export async function readPage(rawUrl: string, tz: string): Promise<string> {
   const url = await assertPublicUrl(rawUrl);
   const browser = await launch();
-  const jsonBodies: { url: string; body: string }[] = [];
+  const jsonBodies: { url: string; key: string; body: string }[] = [];
   const pending: Promise<void>[] = [];
   try {
     const page = await browser.newPage();
@@ -218,7 +265,9 @@ export async function readPage(rawUrl: string, tz: string): Promise<string> {
           .text()
           .then((body) => {
             if (body.length > 500_000) return;
-            if ((body.match(ISO_RE)?.length ?? 0) >= 3) jsonBodies.push({ url: res.url(), body });
+            if ((body.match(ISO_RE)?.length ?? 0) + countEpochs(body) < 3) return;
+            // RPC-style APIs ask for each month at the same URL, with the range in the request body.
+            jsonBodies.push({ url: res.url(), key: `${res.url()} ${res.request().postData() ?? ""}`, body });
           })
           .catch(() => {}),
       );
@@ -234,19 +283,21 @@ export async function readPage(rawUrl: string, tz: string): Promise<string> {
     await Promise.all(pending);
     const title = await page.title().catch(() => "");
     const text = await page.evaluate(() => document.body?.innerText ?? "").catch(() => "");
+    await showNextMonth(page);
+    await Promise.all(pending);
 
     const parts = [`Linked page: ${url.toString()}`, `Title: ${title}`, `Visible text:\n${text.replace(/\n{3,}/g, "\n\n").slice(0, MAX_TEXT)}`];
-    // SPAs often refetch the same endpoint: drop exact repeats, and per URL keep the most complete response.
-    const byUrl = new Map<string, { url: string; body: string }>();
+    // SPAs often refetch the same endpoint: drop exact repeats, and per request keep the most complete response.
+    const byRequest = new Map<string, (typeof jsonBodies)[number]>();
     for (const j of jsonBodies) {
-      const prev = byUrl.get(j.url);
-      if (!prev || j.body.length > prev.body.length) byUrl.set(j.url, j);
+      const prev = byRequest.get(j.key);
+      if (!prev || j.body.length > prev.body.length) byRequest.set(j.key, j);
     }
     const seen = new Set<string>();
-    for (const j of byUrl.values()) {
+    for (const j of byRequest.values()) {
       if (seen.has(j.body)) continue;
       seen.add(j.body);
-      parts.push(`Data loaded by the page from ${new URL(j.url).pathname}:\n${humanizeRRules(compactJson(localizeTimestamps(j.body, tz)))}`);
+      parts.push(`Data loaded by the page from ${new URL(j.url).pathname}:\n${humanizeRRules(compactJson(localizeEpochs(localizeTimestamps(j.body, tz), tz)))}`);
     }
     const digest = localizeTimestamps(parts.join("\n\n"), tz).slice(0, MAX_DIGEST);
     if (!text.trim() && !jsonBodies.length) throw new LinkError("We couldn't read that link. Paste your slots or a screenshot instead.");

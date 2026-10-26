@@ -4,7 +4,7 @@ Find a meeting time that works for everyone, without accounts or calendar access
 
 1. **Create**: pick a length (30 min by default) and, optionally, a title. Recent meetings you've created are offered as presets.
 2. **Share**: copy the link and send it to everyone.
-3. **Your availability**: everyone, including you, writes their availability however they like ("Tue and Thu after 2pm, avoid lunch"), pastes a scheduling link (Calendly, cal.com, zcal…), or drops a calendar screenshot. The time zone is prefilled from the browser and can be changed.
+3. **Your availability**: everyone, including you, writes their availability however they like ("Tue and Thu after 2pm, avoid lunch"), pastes a scheduling link (Calendly, cal.com, zcal, Google Calendar booking pages…), or drops a calendar screenshot. The time zone is prefilled from the browser and can be changed.
 4. **Best times**: the page shows the 3 best times for the group and updates as people reply.
 
 Free to use and MIT licensed.
@@ -13,7 +13,7 @@ Free to use and MIT licensed.
 
 - **The LLM only parses.** Each submission makes one call through [Vercel AI Gateway](https://vercel.com/ai-gateway), which turns the input into structured data: free ranges, busy ranges, booking-page slot starts, and soft preferences, all in local time (`src/lib/ingest/llm.ts`, schema in `src/lib/availability/schema.ts`).
 - **Matching is plain code.** `src/lib/match.ts` turns each person's data into UTC intervals, timezone- and DST-aware via `@date-fns/tz`. It intersects them on a 15-minute grid, scores candidates against everyone's preferences, and picks up to 3 slots, spread across different days where possible. If no time fits everyone, it shows the slots that fit the most people and says who is missing. Page views never cost an LLM call.
-- **Scheduling links are read without provider-specific code** (`src/lib/ingest/page-reader.ts`). The page is rendered in headless Chromium in the participant's time zone. The reader keeps the visible text plus any JSON the page loads that contains timestamps, which is where booking tools keep their slots. In code, it converts timestamps to local time, drops empty values, and compresses runs of evenly spaced start times ("starts every 30 min from 2026-10-07 09:00 through 11:30"). A month of Calendly or cal.com slots then costs about 1k tokens, and the model only copies runs. Only public http(s) hosts are allowed, and private IPs are blocked. Use `pnpm tsx scripts/probe-link.ts <url>` to see exactly what the LLM would receive (no LLM call).
+- **Scheduling links are read without provider-specific code** (`src/lib/ingest/page-reader.ts`). The page is rendered in headless Chromium in the participant's time zone. The reader keeps the visible text plus any JSON the page loads that contains timestamps (ISO, or Unix seconds/milliseconds near today, as Google Calendar booking pages send), which is where booking tools keep their slots. Month-view pages only load the month on screen, so if the page has a "Next month" button, the reader clicks it once to load the rest of the horizon. In code, it converts timestamps to local time, drops empty values, and compresses runs of evenly spaced start times ("starts every 30 min from 2026-10-07 09:00 through 11:30"). A month of Calendly or cal.com slots then costs about 1k tokens, and the model only copies runs. Only public http(s) hosts are allowed, and private IPs are blocked. Use `pnpm tsx scripts/probe-link.ts <url>` to see exactly what the LLM would receive (no LLM call).
 - **Screenshots** are downscaled in the browser, sent once, and never stored.
 
 ## Cost and abuse controls
@@ -25,7 +25,7 @@ Free to use and MIT licensed.
 
 ## Model choice
 
-`pnpm eval` runs `scripts/eval-models.ts`, which checks models against fixtures with known answers: English and Italian text, relative dates, "next week", busy exceptions, a stated timezone, a Google Calendar week screenshot, a booking-page screenshot, saved Calendly and cal.com page digests, and a prompt injection. A full run with the default model costs under $0.01. Use `ONLY=link,busy` to run a subset.
+`pnpm eval` runs `scripts/eval-models.ts`, which checks models against fixtures with known answers: English and Italian text, relative dates, "next week", busy exceptions, a stated timezone, a Google Calendar week screenshot, a booking-page screenshot, saved Calendly, cal.com, zcal and Google Calendar booking page digests, and a prompt injection. A full run with the default model costs under $0.01. Use `ONLY=link,busy` to run a subset.
 
 Latest results for the default, `google/gemini-2.5-flash-lite`: 50/52 checks on the full run. The failing case passed when re-run, so the model is slightly nondeterministic even at temperature 0. Average time is about 2 s, and cost is about $0.0003–0.001 per parse. Earlier comparisons:
 

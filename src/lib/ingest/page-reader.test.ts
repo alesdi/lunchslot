@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertPublicUrl, compactJson, findUrls, humanizeRRules, localizeTimestamps } from "./page-reader";
+import { assertPublicUrl, compactJson, countEpochs, findUrls, humanizeRRules, localizeEpochs, localizeTimestamps } from "./page-reader";
 
 describe("page reader helpers", () => {
   it("finds the first link in free text", () => {
@@ -19,6 +19,31 @@ describe("page reader helpers", () => {
     expect(JSON.parse(compactJson(body)).slots).toEqual([
       "starts every 10 min from 2026-10-07 10:30 through 10:50",
       "starts every 10 min from 2026-10-07 11:20 through 11:40",
+    ]);
+  });
+
+  it("converts Unix timestamps near now to local time, leaving other numbers alone", () => {
+    const now = Date.UTC(2026, 9, 26);
+    expect(localizeEpochs('[["1793093400"],30,1793093400000,{"id":1234567890}]', "Europe/Rome", now)).toBe(
+      '[["2026-10-27 10:30"],30,"2026-10-27 10:30",{"id":1234567890}]',
+    );
+    expect(countEpochs('{"a":1793093400,"b":"1793095200","c":"x 1793097000"}', now)).toBe(2);
+  });
+
+  it("compresses slot tuples like Google appointment pages send", () => {
+    const now = Date.UTC(2026, 9, 26);
+    const body = '[[[[["1793093400"],30]],[[["1793095200"],30]],[[["1793097000"],30]],[[["1793107800"],30]]]]';
+    expect(JSON.parse(compactJson(localizeEpochs(body, "Europe/Rome", now)))).toEqual([
+      "starts every 30 min from 2026-10-27 10:30 through 11:30 [30]",
+      "starts at 2026-10-27 14:30 [30]",
+    ]);
+  });
+
+  it("lists two starts separately instead of as a run", () => {
+    const body = JSON.stringify({ slots: ["2026-10-07 09:30", "2026-10-07 11:00", "2026-10-07 11:30", "2026-10-07 12:00"] });
+    expect(JSON.parse(compactJson(body)).slots).toEqual([
+      "starts at 2026-10-07 09:30",
+      "starts every 30 min from 2026-10-07 11:00 through 12:00",
     ]);
   });
 
