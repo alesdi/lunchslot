@@ -1,8 +1,15 @@
 import { TZDate } from "@date-fns/tz";
-import { expandAvailability, expandPreferences, type Interval } from "./availability/expand";
+import { expandAvailability, expandPreferences, subtract, type Interval } from "./availability/expand";
 import type { ParsedAvailability } from "./availability/schema";
 
-export type MatchParticipant = { id: string; name: string; tz: string; parsed: ParsedAvailability };
+export type MatchParticipant = {
+  id: string;
+  name: string;
+  tz: string;
+  parsed: ParsedAvailability;
+  /** Absolute busy blocks, e.g. from a connected calendar, taken out of whatever `parsed` says is free. */
+  busy?: Interval[] | null;
+};
 
 export type Reason = { tone: "good" | "warn"; text: string };
 
@@ -109,7 +116,7 @@ export function findSlots(
 
   const prepared: Prepared[] = participants.map((p) => ({
     ...p,
-    free: expandAvailability(p.parsed, p.tz, from, to),
+    free: subtract(expandAvailability(p.parsed, p.tz, from, to), p.busy ?? []),
     prefs: expandPreferences(p.parsed, p.tz, from, to),
   }));
   const people = prepared.filter((p) => p.free.some((i) => i.e - i.s >= dur));

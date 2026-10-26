@@ -4,6 +4,7 @@ import { cache } from "react";
 import { MeetingClient } from "@/components/meeting-client";
 import { meetingTitle } from "@/lib/format";
 import { UserError } from "@/lib/errors";
+import { calendarEnabled } from "@/lib/google-calendar";
 import { getMeetingView } from "@/lib/service";
 
 const load = cache((slug: string) =>
@@ -23,5 +24,5 @@ export async function generateMetadata({ params }: PageProps<"/m/[slug]">): Prom
 
 export default async function MeetingPage({ params }: PageProps<"/m/[slug]">) {
   const view = await load((await params).slug);
-  return <MeetingClient initial={view} />;
+  return <MeetingClient initial={view} calendarEnabled={calendarEnabled()} />;
 }

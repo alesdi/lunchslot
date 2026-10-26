@@ -117,6 +117,20 @@ describe("findSlots", () => {
     expect(slots.every((s) => s.start >= "2026-10-07T15:00" && s.end <= "2026-10-07T16:00:00.000Z")).toBe(true);
   });
 
+  it("takes calendar busy blocks out of someone's free time", () => {
+    const ana = person("Ana", "UTC", { free: [range("2026-10-07", "10:00", "12:00")] });
+    const bob = { ...person("Bob", "UTC", {}), busy: [{ s: Date.UTC(2026, 9, 5, 0), e: Date.UTC(2026, 9, 7, 11) }] };
+    const { slots } = findSlots([ana, bob], opts);
+    expect(slots[0]).toMatchObject({ start: "2026-10-07T11:00:00.000Z", everyone: true });
+    expect(slots.every((s) => s.start >= "2026-10-07T11:00")).toBe(true);
+  });
+
+  it("counts someone whose calendar is busy all the time as idle", () => {
+    const ana = person("Ana", "UTC", { free: [range("2026-10-07", "10:00", "12:00")] });
+    const bob = { ...person("Bob", "UTC", {}), busy: [{ s: NOW - 864e5, e: NOW + 30 * 864e5 }] };
+    expect(findSlots([ana, bob], opts).idle).toEqual(["Bob"]);
+  });
+
   it("respects avoid preferences", () => {
     const { slots } = findSlots(
       [
