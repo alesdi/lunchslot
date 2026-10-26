@@ -25,7 +25,7 @@ export async function ingest(input: IngestInput, hooks: IngestHooks): Promise<Pa
 
   // Scheduling links (Calendly, cal.com, zcal, …) are rendered and summarized for the LLM, provider-agnostic.
   const [url] = findUrls(input.text);
-  const linked = url ? await readPage(url, input.tz) : undefined;
+  const linked = url ? await readPage(url, input.tz, input.horizonDays) : undefined;
 
   const r = await parseWithLlm({ ...input, linked }).catch(async (e) => {
     // Invalid or cut-off structured output isn't a provider error, so gateway fallbacks don't kick in.

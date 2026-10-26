@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import type { Slot } from "@/lib/match";
+import type { Pick, Slot } from "@/lib/match";
+
+const pickLabel = (pick: Pick, slot: Slot) =>
+  pick === "attendance" ? (slot.everyone ? "Everyone can make it" : "Most people can make it") : pick === "balanced" ? "Balanced" : "Earliest convenient time";
 
 function fmt(slot: Slot, tz: string) {
   const s = new Date(slot.start);
@@ -13,8 +16,11 @@ function fmt(slot: Slot, tz: string) {
 
 const list = (names: string[]) => new Intl.ListFormat(undefined, { type: "conjunction" }).format(names);
 
-/** `total` counts only people with upcoming times; `idle` names the rest, who are left out of the slots. */
-export function SlotList({ slots, total, idle, tz }: { slots: Slot[]; total: number; idle: string[]; tz: string }) {
+/**
+ * `total` counts only people with times in the range; `idle` names the rest, who are left out of the slots.
+ * `range` is the searched range mid-sentence, like "next 7 days".
+ */
+export function SlotList({ slots, total, idle, tz, range }: { slots: Slot[]; total: number; idle: string[]; tz: string; range: string }) {
   // Highlight slots that weren't there on the previous render.
   const keys = slots.map((s) => s.start).join("|");
   const [prevKeys, setPrevKeys] = useState(keys);
@@ -27,8 +33,8 @@ export function SlotList({ slots, total, idle, tz }: { slots: Slot[]; total: num
 
   const idleNote = idle.length > 0 && (
     <p className="mt-4 text-sm text-warn">
-      {list(idle)} {idle.length === 1 ? "has" : "have"} no upcoming times, so they aren&apos;t counted. Ask them to update
-      their availability.
+      {list(idle)} {idle.length === 1 ? "has" : "have"} no times in the {range}, so they aren&apos;t counted. Look further
+      ahead, or ask them to update their availability.
     </p>
   );
 
@@ -43,7 +49,7 @@ export function SlotList({ slots, total, idle, tz }: { slots: Slot[]; total: num
     return (
       <>
         <p className="rounded-lg border border-dashed border-line px-5 py-6 text-muted">
-          No time works for two or more people yet in the next three weeks. Ask people to widen their availability.
+          No time works for two or more people in the {range}. Look further ahead, or ask people to widen their availability.
         </p>
         {idleNote}
       </>
@@ -63,17 +69,30 @@ export function SlotList({ slots, total, idle, tz }: { slots: Slot[]; total: num
                 fresh.has(slot.start) ? "slot-arrive" : ""
               }`}
             >
+              <ul className="mb-2 flex flex-wrap gap-1.5" aria-label="Why this time">
+                {slot.picks.map((pick) => (
+                  <li
+                    key={pick}
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${best ? "bg-yolk-ink text-yolk" : "border border-line text-ink"}`}
+                  >
+                    {pickLabel(pick, slot)}
+                  </li>
+                ))}
+              </ul>
               <div className={best ? "font-semibold" : "text-muted"}>{day}</div>
               <div className={`font-extrabold tracking-tight ${best ? "text-4xl sm:text-5xl" : "text-2xl"}`}>{time}</div>
-              <div className={`mt-2 text-sm ${best ? "" : "text-muted"}`}>
-                {slot.everyone ? (
-                  "Everyone can make it"
-                ) : (
-                  <>
-                    {slot.available.length} of {total} can make it. Missing: {slot.missing.join(", ")}
-                  </>
-                )}
-              </div>
+              {/* The attendance badge already says when everyone can make it. */}
+              {!(slot.everyone && slot.picks.includes("attendance")) && (
+                <div className={`mt-2 text-sm ${best ? "" : "text-muted"}`}>
+                  {slot.everyone ? (
+                    "Everyone can make it"
+                  ) : (
+                    <>
+                      {slot.available.length} of {total} can make it. Missing: {slot.missing.join(", ")}
+                    </>
+                  )}
+                </div>
+              )}
               {slot.reasons.length > 0 && (
                 <ul className="mt-1 space-y-0.5 text-sm">
                   {slot.reasons.map((r) => (

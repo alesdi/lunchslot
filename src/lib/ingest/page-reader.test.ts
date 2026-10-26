@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertPublicUrl, compactJson, countEpochs, findUrls, humanizeRRules, localizeEpochs, localizeTimestamps, unreadablePageError } from "./page-reader";
+import { assertPublicUrl, compactJson, countEpochs, findUrls, humanizeRRules, localizeEpochs, localizeTimestamps, monthsAhead, unreadablePageError } from "./page-reader";
 
 describe("page reader helpers", () => {
   it("finds the first link in free text", () => {
@@ -65,6 +65,14 @@ describe("page reader helpers", () => {
     );
     expect(unreadablePageError("https://calendar.google.com/calendar/appointments/schedules/abc", "Select an appointment time")).toBeNull();
     expect(unreadablePageError("https://example.com/", err)).toBeNull();
+  });
+
+  it("counts the months a horizon reaches past the current one", () => {
+    expect(monthsAhead(Date.UTC(2026, 9, 1, 10), 7, "Europe/Rome")).toBe(0);
+    expect(monthsAhead(Date.UTC(2026, 9, 26, 10), 7, "Europe/Rome")).toBe(1);
+    expect(monthsAhead(Date.UTC(2026, 9, 26, 10), 60, "Europe/Rome")).toBe(2);
+    // 23:30 UTC on Oct 31 is already November in Rome.
+    expect(monthsAhead(Date.UTC(2026, 9, 31, 23, 30), 7, "Europe/Rome")).toBe(0);
   });
 
   it("rejects private and local addresses", async () => {

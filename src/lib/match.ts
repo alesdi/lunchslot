@@ -6,15 +6,34 @@ export type MatchParticipant = { id: string; name: string; tz: string; parsed: P
 
 export type Reason = { tone: "good" | "warn"; text: string };
 
+/** The ways a slot can be the best: most people, a balance of everything, or as soon as possible. */
+export type Pick = "attendance" | "balanced" | "soonest";
+
 export type Slot = {
   start: string; // ISO
   end: string;
   available: string[]; // participant names
   missing: string[];
   everyone: boolean;
+  /** Which picks chose this slot, in STRATEGIES order. Usually one; a slot can win several. */
+  picks: Pick[];
   score: number;
   reasons: Reason[];
 };
+
+/**
+ * Every pick weighs the same criteria, just differently: people missing, convenience (preferences and
+ * humane local hours), and how far away the slot is. Points are on the preference scale: avoiding a
+ * normal preference costs 20, being outside 08-20 costs 4 per person.
+ */
+const STRATEGIES: { pick: Pick; perMissing: number; perDay: number; minShare: number }[] = [
+  // As many people as possible, then the most convenient of those times, even an awkward one.
+  { pick: "attendance", perMissing: 1000, perDay: 0.3, minShare: 0 },
+  // One person missing costs about a strongly avoided time; a week later costs a mild preference.
+  { pick: "balanced", perMissing: 25, perDay: 1, minShare: 0 },
+  // A point per hour sooner, at a decent time, with at least half the group.
+  { pick: "soonest", perMissing: 8, perDay: 24, minShare: 0.5 },
+];
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -44,12 +63,8 @@ function localHourMinutes(t: number, tz: string): number {
   return d.getHours() * 60 + d.getMinutes();
 }
 
-function localDayKey(t: number, tz: string): string {
-  const d = new TZDate(t, tz);
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-}
-
-function scoreSlot(s: number, e: number, people: Prepared[], now: number) {
+/** How convenient a slot is for the people who can make it, regardless of when it is. */
+function scoreSlot(s: number, e: number, people: Prepared[]) {
   let score = 0;
   const reasons: Reason[] = [];
   const dur = e - s;
@@ -76,8 +91,6 @@ function scoreSlot(s: number, e: number, people: Prepared[], now: number) {
     if (startM < 8 * 60 || endM > 20 * 60) score -= 4;
   }
 
-  // Sooner is better, gently.
-  score -= ((s - now) / DAY) * 0.3;
   // Round start times read nicer.
   const minute = localHourMinutes(s, people[0].tz) % 60;
   if (minute === 0) score += 1;
@@ -100,9 +113,8 @@ export type MatchResult = {
 
 export function findSlots(
   participants: MatchParticipant[],
-  opts: { durationMin: number; now: number; horizonDays: number; limit?: number },
+  opts: { durationMin: number; now: number; horizonDays: number },
 ): MatchResult {
-  const limit = opts.limit ?? 3;
   const dur = opts.durationMin * MIN;
   const from = Math.ceil((opts.now + MIN_LEAD) / GRID) * GRID;
   const to = opts.now + opts.horizonDays * DAY;
@@ -114,57 +126,48 @@ export function findSlots(
   }));
   const people = prepared.filter((p) => p.free.some((i) => i.e - i.s >= dur));
   const idle = prepared.filter((p) => !people.includes(p)).map((p) => p.id);
-  return { slots: pickSlots(people, dur, from, to, limit, opts.now), idle };
+  return { slots: pickSlots(people, dur, from, to, opts.now), idle };
 }
 
-function pickSlots(people: Prepared[], dur: number, from: number, to: number, limit: number, now: number): Slot[] {
+function pickSlots(people: Prepared[], dur: number, from: number, to: number, now: number): Slot[] {
   if (people.length === 0) return [];
+  // With several people, a slot only one person can make isn't a useful suggestion.
+  const need = people.length > 1 ? 2 : 1;
 
-  // Enumerate grid starts and who can make each one.
-  type Cand = { s: number; e: number; who: Prepared[] };
+  // Enumerate grid starts, who can make each one, and how convenient it is for them.
+  type Cand = { s: number; e: number; who: Prepared[]; score: number; reasons: Reason[] };
   const cands: Cand[] = [];
-  let best = 0;
   for (let s = from; s + dur <= to; s += GRID) {
     const e = s + dur;
     const who = people.filter((p) => covers(p.free, s, e));
-    if (who.length === 0 || who.length < best) continue;
-    if (who.length > best) {
-      best = who.length;
-      cands.length = 0;
-    }
-    cands.push({ s, e, who });
-  }
-  if (best === 0) return [];
-  // With several people, a slot only one person can make isn't a useful suggestion.
-  if (people.length > 1 && best < 2) return [];
-
-  const scored = cands
-    .map((c) => ({ ...c, ...scoreSlot(c.s, c.e, c.who, now) }))
-    .sort((a, b) => b.score - a.score || a.s - b.s);
-
-  // Pick top slots: first prefer distinct days, then fill with any non-overlapping.
-  const refTz = people[0].tz;
-  const picked: typeof scored = [];
-  const days = new Set<string>();
-  for (const pass of [true, false]) {
-    for (const c of scored) {
-      if (picked.length >= limit) break;
-      if (picked.includes(c)) continue;
-      if (picked.some((p) => c.s < p.e && p.s < c.e)) continue;
-      const day = localDayKey(c.s, refTz);
-      if (pass && days.has(day)) continue;
-      picked.push(c);
-      days.add(day);
-    }
+    if (who.length >= need) cands.push({ s, e, who, ...scoreSlot(s, e, who) });
   }
 
-  return picked.map((c) => ({
+  // Each strategy picks its best slot; ties go to the earliest.
+  const picked: { c: Cand; picks: Pick[]; total: number }[] = [];
+  for (const st of STRATEGIES) {
+    const min = Math.max(need, Math.ceil(people.length * st.minShare));
+    let best: Cand | undefined;
+    let bestTotal = -Infinity;
+    for (const c of cands) {
+      if (c.who.length < min) continue;
+      const total = c.score - (people.length - c.who.length) * st.perMissing - ((c.s - now) / DAY) * st.perDay;
+      if (total > bestTotal) [best, bestTotal] = [c, total];
+    }
+    if (!best) continue;
+    const same = picked.find((p) => p.c === best);
+    if (same) same.picks.push(st.pick);
+    else picked.push({ c: best, picks: [st.pick], total: bestTotal });
+  }
+
+  return picked.map(({ c, picks, total }) => ({
     start: new Date(c.s).toISOString(),
     end: new Date(c.e).toISOString(),
     available: c.who.map((p) => p.name),
     missing: people.filter((p) => !c.who.includes(p)).map((p) => p.name),
     everyone: c.who.length === people.length,
-    score: Math.round(c.score * 100) / 100,
+    picks,
+    score: Math.round(total * 100) / 100,
     reasons: c.reasons,
   }));
 }

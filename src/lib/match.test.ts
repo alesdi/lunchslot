@@ -126,20 +126,63 @@ describe("findSlots", () => {
         }),
         person("Bob", "UTC", { free: [range("2026-10-07", "09:00", "18:00")] }),
       ],
-      { ...opts, limit: 1 },
+      opts,
     );
     const h = new Date(slots[0].start).getUTCHours();
     expect(h < 12 || h >= 14).toBe(true);
     expect(slots[0].reasons).toEqual([]);
   });
 
-  it("returns at most 3 non-overlapping slots, preferring different days", () => {
+  it("picks for attendance, balance and speed separately", () => {
+    const avoidEarly = { kind: "avoid" as const, date: null, weekdays: null, start: "06:00", end: "08:00", weight: 3, label: "early mornings" };
     const { slots } = findSlots(
-      [person("Ana", "UTC", { free: [range(null, "09:00", "17:00", ["mon", "tue", "wed", "thu", "fri"])] })],
+      [
+        // Everyone can only make an early slot in 13 days, which Ana strongly wants to avoid.
+        person("Ana", "UTC", {
+          free: [range("2026-10-18", "06:00", "07:00"), range("2026-10-09", "10:00", "11:00"), range("2026-10-06", "07:00", "07:30")],
+          preferences: [avoidEarly],
+        }),
+        person("Bob", "UTC", { free: [range("2026-10-18", "06:00", "07:00"), range("2026-10-09", "10:00", "11:00")] }),
+        // Ana and Cy could also meet tomorrow, at an awkward hour.
+        person("Cy", "UTC", { free: [range("2026-10-18", "06:00", "07:00"), range("2026-10-06", "07:00", "07:30")] }),
+      ],
       opts,
     );
-    expect(slots).toHaveLength(3);
-    expect(new Set(slots.map((s) => s.start.slice(0, 10))).size).toBe(3);
+    expect(slots.map((s) => [s.picks, s.start])).toEqual([
+      [["attendance"], "2026-10-18T06:00:00.000Z"],
+      [["balanced"], "2026-10-09T10:00:00.000Z"],
+      [["soonest"], "2026-10-06T07:00:00.000Z"],
+    ]);
+    expect(slots[0]).toMatchObject({ everyone: true });
+    expect(slots[1]).toMatchObject({ everyone: false, missing: ["Cy"] });
+  });
+
+  it("shows a slot that wins several picks once", () => {
+    const { slots } = findSlots(
+      [
+        person("Ana", "UTC", { free: [range("2026-10-06", "10:00", "11:00")] }),
+        person("Bob", "UTC", { free: [range("2026-10-06", "10:00", "11:00")] }),
+      ],
+      opts,
+    );
+    expect(slots).toHaveLength(1);
+    expect(slots[0]).toMatchObject({ start: "2026-10-06T10:00:00.000Z", picks: ["attendance", "balanced", "soonest"] });
+  });
+
+  it("only picks the earliest time when at least half the group can make it", () => {
+    const { slots } = findSlots(
+      [
+        person("Ana", "UTC", { free: [range("2026-10-06", "10:00", "11:00"), range("2026-10-08", "10:00", "11:00")] }),
+        person("Bob", "UTC", { free: [range("2026-10-06", "10:00", "11:00"), range("2026-10-08", "10:00", "11:00")] }),
+        person("Cy", "UTC", { free: [range("2026-10-08", "10:00", "11:00")] }),
+        person("Di", "UTC", { free: [range("2026-10-08", "10:00", "11:00")] }),
+        person("Ed", "UTC", { free: [range("2026-10-08", "10:00", "11:00")] }),
+      ],
+      opts,
+    );
+    // Two of five tomorrow is too few: every pick lands on the 8th, when everyone can come.
+    expect(slots).toHaveLength(1);
+    expect(slots[0]).toMatchObject({ start: "2026-10-08T10:00:00.000Z", everyone: true });
   });
 
   it("falls back to best coverage when nobody fully overlaps", () => {

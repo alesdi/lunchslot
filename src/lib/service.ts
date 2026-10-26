@@ -8,6 +8,7 @@ import { ingest } from "./ingest";
 import { findUrls } from "./ingest/page-reader";
 import { findSlots, type Slot } from "./match";
 import { UserError } from "./errors";
+import { DEFAULT_HORIZON_DAYS, MAX_HORIZON_DAYS } from "./horizon";
 
 const notFound = (msg = "Not found.") => new UserError(msg, 404);
 
@@ -78,7 +79,7 @@ export async function createMeeting(req: Request, input: z.infer<typeof CreateMe
       id,
       title: input.title || null,
       durationMin: input.durationMin,
-      horizonDays: 21,
+      horizonDays: MAX_HORIZON_DAYS,
       expiresAt: new Date(Date.now() + MEETING_TTL_DAYS * 864e5),
     });
   if (Math.random() < 0.05) await db().delete(meetings).where(lt(meetings.expiresAt, new Date()));
@@ -96,7 +97,7 @@ export async function upsertParticipant(
   slug: string,
   input: SubmissionInput & { participantId?: string; editToken?: string },
 ) {
-  const m = await getMeetingRow(slug);
+  await getMeetingRow(slug);
   let existing: typeof participants.$inferSelect | undefined;
   if (input.participantId && input.editToken) {
     [existing] = await db()
@@ -110,7 +111,7 @@ export async function upsertParticipant(
     if (count >= MAX_PARTICIPANTS) throw new UserError(`This meeting is full (${MAX_PARTICIPANTS} people max).`);
   }
 
-  const parsed = await parseSubmission(req, input, m.horizonDays);
+  const parsed = await parseSubmission(req, input, MAX_HORIZON_DAYS);
   const source = sourceOf(input);
 
   if (existing) {
@@ -142,13 +143,13 @@ export const ReplacementInput = SubmissionInput.omit({ name: true });
 
 /** Overwrites someone's availability without revealing what they had; their name and edit token stay. */
 export async function replaceAvailability(req: Request, slug: string, id: string, input: Availability) {
-  const m = await getMeetingRow(slug);
+  await getMeetingRow(slug);
   const [existing] = await db()
     .select({ id: participants.id })
     .from(participants)
     .where(and(eq(participants.id, id), eq(participants.meetingId, slug)));
   if (!existing) throw notFound("That person is no longer in this meeting.");
-  const parsed = await parseSubmission(req, input, m.horizonDays);
+  const parsed = await parseSubmission(req, input, MAX_HORIZON_DAYS);
   const source = sourceOf(input);
   await db()
     .update(participants)
@@ -160,19 +161,21 @@ export type MeetingView = {
   slug: string;
   title: string | null;
   durationMin: number;
+  /** How far ahead `slots` were searched. */
+  horizonDays: number;
   participants: {
     id: string;
     name: string;
     tz: string;
     source: ParticipantSource;
     updatedAt: string;
-    /** False when none of their times are still ahead, so they aren't counted in the slots. */
+    /** False when none of their times fall within the range, so they aren't counted in the slots. */
     hasTimes: boolean;
   }[];
   slots: Slot[];
 };
 
-export async function getMeetingView(slug: string): Promise<MeetingView> {
+export async function getMeetingView(slug: string, horizonDays = DEFAULT_HORIZON_DAYS): Promise<MeetingView> {
   const m = await getMeetingRow(slug);
   const rows = await db()
     .select({
@@ -186,11 +189,12 @@ export async function getMeetingView(slug: string): Promise<MeetingView> {
     .from(participants)
     .where(eq(participants.meetingId, slug))
     .orderBy(asc(participants.createdAt));
-  const { slots, idle } = findSlots(rows, { durationMin: m.durationMin, now: Date.now(), horizonDays: m.horizonDays });
+  const { slots, idle } = findSlots(rows, { durationMin: m.durationMin, now: Date.now(), horizonDays });
   return {
     slug,
     title: m.title,
     durationMin: m.durationMin,
+    horizonDays,
     participants: rows.map((r) => ({
       id: r.id,
       name: r.name,
@@ -208,8 +212,8 @@ export async function getMeetingView(slug: string): Promise<MeetingView> {
  * but the work runs at most once per REFRESH_EVERY_HOURS per meeting; otherwise this is a no-op.
  * Written and screenshot entries are kept as submitted.
  */
-export async function refreshMeeting(slug: string): Promise<MeetingView> {
-  const m = await getMeetingRow(slug);
+export async function refreshMeeting(slug: string, horizonDays = DEFAULT_HORIZON_DAYS): Promise<MeetingView> {
+  await getMeetingRow(slug);
   // Claim the refresh atomically so concurrent clicks don't each re-read every link.
   // A new meeting counts as fresh: none of its links can be older than the meeting itself.
   const [claimed] = await db()
@@ -222,7 +226,7 @@ export async function refreshMeeting(slug: string): Promise<MeetingView> {
       ),
     )
     .returning({ refreshedAt: meetings.refreshedAt });
-  if (!claimed) return getMeetingView(slug);
+  if (!claimed) return getMeetingView(slug, horizonDays);
 
   const queue = await db()
     .select()
@@ -232,7 +236,7 @@ export async function refreshMeeting(slug: string): Promise<MeetingView> {
   const refreshOne = async (p: (typeof queue)[number]) => {
     try {
       const parsed = await ingest(
-        { text: p.rawText, images: [], tz: p.tz, now: Date.now(), horizonDays: m.horizonDays },
+        { text: p.rawText, images: [], tz: p.tz, now: Date.now(), horizonDays: MAX_HORIZON_DAYS },
         // No per-visitor rate limit: the daily claim above already caps how often this runs.
         { beforeLlm: checkBudget, afterLlm: recordSpend },
       );
@@ -253,7 +257,7 @@ export async function refreshMeeting(slug: string): Promise<MeetingView> {
       for (let p = queue.shift(); p; p = queue.shift()) await refreshOne(p);
     }),
   );
-  return getMeetingView(slug);
+  return getMeetingView(slug, horizonDays);
 }
 
 /** Raw text of your own entry, so you can edit it. */

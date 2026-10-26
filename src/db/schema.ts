@@ -7,6 +7,7 @@ export const meetings = pgTable("meetings", {
   id: text("id").primaryKey(),
   title: text("title"),
   durationMin: integer("duration_min").notNull(),
+  /** How far ahead entries are read when submitted. Older meetings say 21; all now read MAX_HORIZON_DAYS. */
   horizonDays: integer("horizon_days").notNull().default(21),
   createdAt: tsz("created_at").notNull().defaultNow(),
   expiresAt: tsz("expires_at").notNull(),

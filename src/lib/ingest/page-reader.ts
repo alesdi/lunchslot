@@ -250,11 +250,19 @@ export function unreadablePageError(pageUrl: string, text: string): LinkError | 
   return null;
 }
 
+/** How many months past the current one a horizon reaches, as seen in `tz`. */
+export function monthsAhead(now: number, horizonDays: number, tz: string): number {
+  const a = new TZDate(now, tz);
+  const b = new TZDate(now + horizonDays * 864e5, tz);
+  return (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth();
+}
+
 /**
- * Month-view booking pages only load the month on screen, so late in a month most of the meeting's
- * horizon is missing. Page once to the next month, if the page has a button for it, to load that too.
+ * Month-view booking pages only load the month on screen, so most of the horizon would be missing.
+ * Page forward one month at a time, if the page has a button for it, to load those months too.
+ * Returns false when there's no such button.
  */
-async function showNextMonth(page: Page) {
+async function showNextMonth(page: Page): Promise<boolean> {
   const clicked = await page
     // No named helpers in here: bundlers can wrap them in calls that don't exist inside the page.
     .evaluate(() => {
@@ -265,11 +273,11 @@ async function showNextMonth(page: Page) {
       return !!next;
     })
     .catch(() => false);
-  if (!clicked) return;
-  await page.waitForNetworkIdle({ idleTime: 700, timeout: 5_000 }).catch(() => {});
+  if (clicked) await page.waitForNetworkIdle({ idleTime: 700, timeout: 5_000 }).catch(() => {});
+  return clicked;
 }
 
-export async function readPage(rawUrl: string, tz: string): Promise<string> {
+export async function readPage(rawUrl: string, tz: string, horizonDays: number): Promise<string> {
   const url = await assertPublicUrl(rawUrl);
   const browser = await launch();
   const jsonBodies: { url: string; key: string; body: string }[] = [];
@@ -326,7 +334,7 @@ export async function readPage(rawUrl: string, tz: string): Promise<string> {
     const text = await page.evaluate(() => document.body?.innerText ?? "").catch(() => "");
     const unreadable = unreadablePageError(page.url(), text);
     if (unreadable) throw unreadable;
-    await showNextMonth(page);
+    for (let i = Math.min(monthsAhead(Date.now(), horizonDays, tz), 3); i > 0 && (await showNextMonth(page)); i--);
     await Promise.all(pending);
 
     const parts = [`Linked page: ${url.toString()}`, `Title: ${title}`, `Visible text:\n${text.replace(/\n{3,}/g, "\n\n").slice(0, MAX_TEXT)}`];

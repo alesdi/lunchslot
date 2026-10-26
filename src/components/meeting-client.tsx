@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { ParticipantSource } from "@/db/schema";
 import { timeAgo } from "@/lib/format";
+import { HORIZONS, horizonPhrase } from "@/lib/horizon";
 import type { MeetingView } from "@/lib/service";
 import {
   copyText,
@@ -52,11 +53,25 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshState, setRefreshState] = useState<"idle" | "busy" | "done">("idle");
+  const [horizon, setHorizonState] = useState(initial.horizonDays);
+  // Read by in-flight requests, so a poll for the previous range can't overwrite the new one.
+  const horizonRef = useRef(horizon);
+  const horizonId = useId();
+
+  const showView = useCallback((v: MeetingView) => {
+    if (v.horizonDays === horizonRef.current) setView(v);
+  }, []);
 
   const refresh = useCallback(async () => {
-    const res = await fetch(`/api/meetings/${slug}`, { cache: "no-store" });
-    if (res.ok) setView(await res.json());
-  }, [slug]);
+    const res = await fetch(`/api/meetings/${slug}?days=${horizonRef.current}`, { cache: "no-store" });
+    if (res.ok) showView(await res.json());
+  }, [slug, showView]);
+
+  function setHorizon(days: number) {
+    horizonRef.current = days;
+    setHorizonState(days);
+    refresh();
+  }
 
   useEffect(() => {
     const tick = () => document.visibilityState === "visible" && refresh();
@@ -86,7 +101,7 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
     setError(null);
     setRefreshState("busy");
     try {
-      setView(await postJson<MeetingView>(`/api/meetings/${slug}/refresh`, {}));
+      showView(await postJson<MeetingView>(`/api/meetings/${slug}/refresh`, { days: horizonRef.current }));
       setRefreshState("done");
       setTimeout(() => setRefreshState("idle"), 2500);
     } catch (e) {
@@ -268,8 +283,29 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
                 {refreshState === "busy" ? "Refreshing…" : refreshState === "done" ? "Up to date" : "Refresh"}
               </button>
             </div>
-            <p className="mb-4 text-muted">{viewerTz && <>Shown in {viewerTz.replace(/_/g, " ")}.</>}</p>
-            {viewerTz ? <SlotList slots={view.slots} total={total - idle.length} idle={idle} tz={viewerTz} /> : <div className="h-40" />}
+            <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-muted">
+              <label htmlFor={horizonId} className="sr-only">
+                How far ahead to look
+              </label>
+              <select
+                id={horizonId}
+                value={horizon}
+                onChange={(e) => setHorizon(Number(e.target.value))}
+                className="rounded-lg border border-line bg-surface px-3 py-1.5 font-semibold text-ink outline-none focus:border-ink"
+              >
+                {HORIZONS.map((h) => (
+                  <option key={h.days} value={h.days}>
+                    {h.label}
+                  </option>
+                ))}
+              </select>
+              {viewerTz && <span>Shown in {viewerTz.replace(/_/g, " ")}.</span>}
+            </div>
+            {viewerTz ? (
+              <SlotList slots={view.slots} total={total - idle.length} idle={idle} tz={viewerTz} range={horizonPhrase(view.horizonDays)} />
+            ) : (
+              <div className="h-40" />
+            )}
             {!joined && (
               <button
                 type="button"
@@ -294,7 +330,7 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
                     <div className="text-sm text-muted">
                       {SOURCE_LABELS[p.source]}
                       {now !== null && <>, updated {timeAgo(p.updatedAt, now)}</>}
-                      {!p.hasTimes && <span className="text-warn">. No upcoming times</span>}
+                      {!p.hasTimes && <span className="text-warn">. No times in the {horizonPhrase(view.horizonDays)}</span>}
                     </div>
                   </div>
                   {p.id === me?.id ? (
