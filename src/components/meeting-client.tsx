@@ -17,6 +17,7 @@ import {
   type Ownership,
 } from "@/lib/client";
 import { AvailabilityInput } from "./availability-input";
+import { ConnectCalendar, type CalendarChoice } from "./connect-calendar";
 import { FormError, NameField, SubmitButton } from "./form-bits";
 import { MeetingHeading } from "./meeting-title";
 import { SlotList } from "./slot-list";
@@ -25,11 +26,16 @@ import { TimezoneField } from "./timezone-field";
 
 const POLL_MS = 5000;
 const INVITEE_STEPS = ["Your availability", "Best times"];
-const SOURCE_LABELS: Record<ParticipantSource, string> = { link: "Calendar link", screenshot: "Screenshot", text: "Written" };
+const SOURCE_LABELS: Record<ParticipantSource, string> = {
+  link: "Calendar link",
+  screenshot: "Screenshot",
+  text: "Written",
+  calendar: "Google Calendar",
+};
 
 type Participant = MeetingView["participants"][number];
 
-export function MeetingClient({ initial }: { initial: MeetingView }) {
+export function MeetingClient({ initial, calendarEnabled }: { initial: MeetingView; calendarEnabled: boolean }) {
   const slug = initial.slug;
   const [view, setView] = useState(initial);
   const viewerTz = useViewerTz();
@@ -49,6 +55,7 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
   const tz = tzInput ?? viewerTz ?? "";
   const [text, setText] = useState("");
   const [images, setImages] = useState<string[]>([]);
+  const [calendar, setCalendar] = useState<CalendarChoice>({ kind: "none" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshState, setRefreshState] = useState<"idle" | "busy" | "done">("idle");
@@ -99,11 +106,15 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
     if (!owner) return;
     setError(null);
     try {
-      const entry = await postJson<{ name: string; tz: string; text: string }>(`/api/meetings/${slug}/me`, owner);
+      const entry = await postJson<{ name: string; tz: string; text: string; calendarConnected: boolean }>(
+        `/api/meetings/${slug}/me`,
+        owner,
+      );
       setName(entry.name);
       setTz(entry.tz);
       setText(entry.text);
       setImages([]);
+      setCalendar(entry.calendarConnected ? { kind: "kept" } : { kind: "none" });
       setEditing(true);
     } catch (e) {
       setError((e as Error).message);
@@ -142,6 +153,7 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
     if (replacing) setTz(null);
     setReplacing(null);
     setEditing(false);
+    setCalendar({ kind: "none" });
   }
 
   async function submit(e: React.FormEvent) {
@@ -162,6 +174,8 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
         tz,
         text,
         images,
+        ...(calendar.kind === "new" && { calendarGrant: calendar.grant }),
+        keepCalendar: calendar.kind === "kept",
         ...(joined && owner ? owner : {}),
       });
       storage.setOwner(slug, res);
@@ -171,6 +185,7 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
       setPeek(false);
       setText("");
       setImages([]);
+      setCalendar({ kind: "none" });
       await refresh();
     } catch (err) {
       setError((err as Error).message);
@@ -183,6 +198,8 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
   const current = (isCreator ? 2 : 0) + (showForm ? 0 : 1);
   const othersIn = view.participants.filter((p) => p.id !== me?.id).map((p) => p.name);
   const hasLink = /https?:\/\//i.test(text);
+  const written = text.trim().length > 0 || images.length > 0;
+  const withCalendar = !replacing && calendar.kind !== "none";
 
   return (
     <div>
@@ -229,12 +246,13 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
               <TimezoneField value={tz} onChange={setTz} disabled={busy} />
             </div>
             <AvailabilityInput text={text} onText={setText} images={images} onImages={setImages} disabled={busy} />
+            {calendarEnabled && !replacing && <ConnectCalendar value={calendar} onChange={setCalendar} disabled={busy} />}
             <FormError error={error} />
             <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
               <SubmitButton
                 busy={busy}
-                busyLabel={hasLink ? "Opening your link…" : "Reading your availability…"}
-                disabled={(!replacing && !name.trim()) || !isValidTz(tz) || (!text.trim() && !images.length)}
+                busyLabel={hasLink ? "Opening your link…" : withCalendar && !written ? "Reading your calendar…" : "Reading your availability…"}
+                disabled={(!replacing && !name.trim()) || !isValidTz(tz) || (!written && !withCalendar)}
               >
                 {replacing ? `Replace ${replacing.name}'s availability` : editing ? "Save changes" : "Add my availability"}
               </SubmitButton>

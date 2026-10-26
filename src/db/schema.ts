@@ -1,4 +1,5 @@
 import { date, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import type { Interval } from "@/lib/availability/expand";
 import type { ParsedAvailability } from "@/lib/availability/schema";
 
 const tsz = (name: string) => timestamp(name, { withTimezone: true });
@@ -14,7 +15,7 @@ export const meetings = pgTable("meetings", {
   refreshedAt: tsz("refreshed_at"),
 });
 
-export const PARTICIPANT_SOURCES = ["link", "screenshot", "text"] as const;
+export const PARTICIPANT_SOURCES = ["link", "screenshot", "text", "calendar"] as const;
 export type ParticipantSource = (typeof PARTICIPANT_SOURCES)[number];
 
 export const participants = pgTable(
@@ -30,6 +31,10 @@ export const participants = pgTable(
     source: text("source", { enum: PARTICIPANT_SOURCES }).notNull().default("text"),
     parsed: jsonb("parsed").$type<ParsedAvailability>().notNull(),
     editTokenHash: text("edit_token_hash").notNull(),
+    /** Busy blocks read from a connected Google Calendar (free/busy only), subtracted from `parsed`. */
+    calendarBusy: jsonb("calendar_busy").$type<Interval[]>(),
+    /** Encrypted Google refresh token while the calendar stays connected. Never sent to clients. */
+    googleToken: text("google_token"),
     createdAt: tsz("created_at").notNull().defaultNow(),
     updatedAt: tsz("updated_at").notNull().defaultNow(),
   },

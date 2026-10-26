@@ -4,7 +4,7 @@ Find a meeting time that works for everyone, without accounts or calendar access
 
 1. **Create**: pick a length (30 min by default) and, optionally, a title. Recent meetings you've created are offered as presets.
 2. **Share**: copy the link and send it to everyone.
-3. **Your availability**: everyone, including you, writes their availability however they like ("Tue and Thu after 2pm, avoid lunch"), pastes a scheduling link (Calendly, cal.com, zcal…), or drops a calendar screenshot. Google Calendar booking pages can't be read from the server (see below), so for those a screenshot works best. The time zone is prefilled from the browser and can be changed.
+3. **Your availability**: everyone, including you, writes their availability however they like ("Tue and Thu after 2pm, avoid lunch"), pastes a scheduling link (Calendly, cal.com, zcal…), drops a calendar screenshot, or connects their Google Calendar. Google Calendar booking pages can't be read from the server (see below), so for those a screenshot works best. The time zone is prefilled from the browser and can be changed.
 4. **Best times**: the page shows the 3 best times for the group and updates as people reply.
 
 Free to use and MIT licensed.
@@ -15,6 +15,7 @@ Free to use and MIT licensed.
 - **Matching is plain code.** `src/lib/match.ts` turns each person's data into UTC intervals, timezone- and DST-aware via `@date-fns/tz`. It intersects them on a 15-minute grid, scores candidates against everyone's preferences, and picks up to 3 slots, spread across different days where possible. If no time fits everyone, it shows the slots that fit the most people and says who is missing. Page views never cost an LLM call.
 - **Scheduling links are read without provider-specific code** (`src/lib/ingest/page-reader.ts`). The page is rendered in headless Chromium in the participant's time zone. The reader keeps the visible text plus any JSON the page loads that contains timestamps (ISO, or Unix seconds/milliseconds near today), which is where booking tools keep their slots. Month-view pages only load the month on screen, so if the page has a "Next month" button, the reader clicks it once to load the rest of the horizon. In code, it converts timestamps to local time, drops empty values, and compresses runs of evenly spaced start times ("starts every 30 min from 2026-10-07 09:00 through 11:30"). A month of Calendly or cal.com slots then costs about 1k tokens, and the model only copies runs. Only public http(s) hosts are allowed, and private IPs are blocked. Use `pnpm tsx scripts/probe-link.ts <url>` to see exactly what the LLM would receive (no LLM call). Google Calendar booking pages work locally, but Google's slot API refuses requests from Vercel's servers (403), so in production the reader recognizes Google's error page and asks for a screenshot instead.
 - **Screenshots** are downscaled in the browser, sent once, and never stored.
+- **Google Calendar** is read through the official Calendar API with a single scope, `calendar.freebusy`: Lunchslot only ever sees busy blocks, never event titles or details (`src/lib/google-calendar.ts`). Consent happens in a popup (`/api/google/authorize` → Google → `/api/google/callback`), with offline access and forced consent so each connection gets its own refresh token. The callback hands the form an encrypted grant, and the refresh token is stored encrypted (AES-256-GCM, `CALENDAR_TOKEN_KEY`). Busy blocks are subtracted from whatever the person wrote, or from Mon–Fri 9–18 if they wrote nothing; a calendar-only entry costs no LLM call. Refresh re-reads connected calendars, and removing, replacing or disconnecting an entry revokes its access. Busy blocks are never sent to other participants.
 
 ## Cost and abuse controls
 
@@ -46,6 +47,8 @@ vercel link && vercel env pull .env.local   # DATABASE_URL + VERCEL_OIDC_TOKEN f
 pnpm db:migrate
 pnpm dev
 ```
+
+Google Calendar is optional: the button only shows when `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `CALENDAR_TOKEN_KEY` are set. To set it up, in a Google Cloud project enable the Google Calendar API, configure the OAuth consent screen with the `calendar.freebusy` scope, and create a Web OAuth client whose authorized redirect URIs are `https://<your domain>/api/google/callback` and `http://localhost:3000/api/google/callback`. While the consent screen is in Testing, only listed test users can connect and their tokens expire after 7 days; a public launch needs Google's verification.
 
 - `pnpm test`: matching engine unit tests
 - `pnpm eval [model...]`: model comparison (append `@none` / `@low` to set the reasoning level)
