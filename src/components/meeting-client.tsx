@@ -27,6 +27,8 @@ const POLL_MS = 5000;
 const INVITEE_STEPS = ["Your availability", "Best times"];
 const SOURCE_LABELS: Record<ParticipantSource, string> = { link: "Calendar link", screenshot: "Screenshot", text: "Written" };
 
+type Participant = MeetingView["participants"][number];
+
 export function MeetingClient({ initial }: { initial: MeetingView }) {
   const slug = initial.slug;
   const [view, setView] = useState(initial);
@@ -35,6 +37,8 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
   const owner = useOwner(slug);
   const isCreator = useRecentMeetings().some((m) => m.slug === slug);
   const [editing, setEditing] = useState(false);
+  // Someone else whose availability is being replaced. Their current entry is never shown, only overwritten.
+  const [replacing, setReplacing] = useState<Participant | null>(null);
   const [peek, setPeek] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -66,7 +70,7 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
 
   const me = owner ? view.participants.find((p) => p.id === owner.participantId) : undefined;
   const joined = !!me;
-  const showForm = (!joined && !peek) || editing;
+  const showForm = (!joined && !peek) || editing || !!replacing;
   const total = view.participants.length;
   const idle = view.participants.filter((p) => !p.hasTimes).map((p) => p.name);
 
@@ -108,11 +112,36 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
 
   async function leave() {
     if (!owner) return;
-    await postJson(`/api/meetings/${slug}/participants`, owner, "DELETE").catch(() => {});
+    await postJson(`/api/meetings/${slug}/participants/${owner.participantId}`, {}, "DELETE").catch(() => {});
     storage.clearOwner(slug);
     setEditing(false);
     setText("");
     refresh();
+  }
+
+  async function removeOther(p: Participant) {
+    if (!confirm(`Remove ${p.name} from this meeting? Their availability will be deleted.`)) return;
+    setError(null);
+    try {
+      await postJson(`/api/meetings/${slug}/participants/${p.id}`, {}, "DELETE");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    refresh();
+  }
+
+  function startReplace(p: Participant) {
+    setError(null);
+    setTz(p.tz);
+    setText("");
+    setImages([]);
+    setReplacing(p);
+  }
+
+  function closeForm() {
+    if (replacing) setTz(null);
+    setReplacing(null);
+    setEditing(false);
   }
 
   async function submit(e: React.FormEvent) {
@@ -120,6 +149,14 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
     setError(null);
     setBusy(true);
     try {
+      if (replacing) {
+        await postJson(`/api/meetings/${slug}/participants/${replacing.id}`, { tz, text, images }, "PUT");
+        closeForm();
+        setText("");
+        setImages([]);
+        await refresh();
+        return;
+      }
       const res = await postJson<Ownership>(`/api/meetings/${slug}/participants`, {
         name,
         tz,
@@ -166,16 +203,29 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
       {showForm ? (
         <section aria-labelledby="add">
           <h2 id="add" className="mb-1 text-xl font-bold">
-            {editing ? "Edit your availability" : "When are you free?"}
+            {replacing ? `Replace ${replacing.name}'s availability` : editing ? "Edit your availability" : "When are you free?"}
           </h2>
-          <p className="mb-6 text-muted">
-            {othersIn.length > 0
-              ? `${othersIn.join(", ")} ${othersIn.length === 1 ? "has" : "have"} already replied.`
-              : "You're the first. Others will see the best times once they add theirs."}
-          </p>
+          {replacing ? (
+            // Loud on purpose: Replace sits right next to Remove, so this may well be a misclick.
+            <div role="alert" className="mt-4 mb-6 rounded-lg border-2 border-warn bg-surface px-4 py-3">
+              <p className="font-bold text-warn">You&apos;re editing {replacing.name}&apos;s availability, not yours.</p>
+              <p className="mt-1 text-muted">
+                Whatever you add here replaces what {replacing.name} entered. Their current times stay private.{" "}
+                <button type="button" onClick={closeForm} className="text-ink underline underline-offset-2">
+                  Not what you meant? Go back
+                </button>
+              </p>
+            </div>
+          ) : (
+            <p className="mb-6 text-muted">
+              {othersIn.length > 0
+                ? `${othersIn.join(", ")} ${othersIn.length === 1 ? "has" : "have"} already replied.`
+                : "You're the first. Others will see the best times once they add theirs."}
+            </p>
+          )}
           <form onSubmit={submit} className="space-y-6">
             <div className="flex flex-col gap-6 sm:flex-row">
-              <NameField value={name} onChange={setName} disabled={busy} />
+              {!replacing && <NameField value={name} onChange={setName} disabled={busy} />}
               <TimezoneField value={tz} onChange={setTz} disabled={busy} />
             </div>
             <AvailabilityInput text={text} onText={setText} images={images} onImages={setImages} disabled={busy} />
@@ -184,12 +234,12 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
               <SubmitButton
                 busy={busy}
                 busyLabel={hasLink ? "Opening your link…" : "Reading your availability…"}
-                disabled={!name.trim() || !isValidTz(tz) || (!text.trim() && !images.length)}
+                disabled={(!replacing && !name.trim()) || !isValidTz(tz) || (!text.trim() && !images.length)}
               >
-                {editing ? "Save changes" : "Add my availability"}
+                {replacing ? `Replace ${replacing.name}'s availability` : editing ? "Save changes" : "Add my availability"}
               </SubmitButton>
-              {editing ? (
-                <button type="button" onClick={() => setEditing(false)} className="text-muted underline underline-offset-2">
+              {editing || replacing ? (
+                <button type="button" onClick={closeForm} className="text-muted underline underline-offset-2">
                   Cancel
                 </button>
               ) : (
@@ -247,12 +297,25 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
                       {!p.hasTimes && <span className="text-warn">. No upcoming times</span>}
                     </div>
                   </div>
-                  {p.id === me?.id && (
+                  {p.id === me?.id ? (
                     <div className="flex shrink-0 gap-3 text-sm">
                       <button type="button" onClick={startEdit} className="underline underline-offset-2">
                         Edit
                       </button>
                       <button type="button" onClick={leave} className="text-muted underline underline-offset-2 hover:text-ink">
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex shrink-0 gap-3 text-sm">
+                      <button type="button" onClick={() => startReplace(p)} className="underline underline-offset-2">
+                        Replace
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeOther(p)}
+                        className="text-muted underline underline-offset-2 hover:text-ink"
+                      >
                         Remove
                       </button>
                     </div>

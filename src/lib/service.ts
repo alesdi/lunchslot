@@ -38,7 +38,9 @@ export const SubmissionInput = z.object({
 });
 export type SubmissionInput = z.infer<typeof SubmissionInput>;
 
-const sourceOf = (input: SubmissionInput): ParticipantSource =>
+type Availability = Omit<SubmissionInput, "name">;
+
+const sourceOf = (input: Availability): ParticipantSource =>
   findUrls(input.text).length ? "link" : input.images.length ? "screenshot" : "text";
 
 export const CreateMeetingInput = z.object({
@@ -53,7 +55,7 @@ const tokenMatches = (token: string, hash: string) => {
   return a.length === b.length && timingSafeEqual(a, b);
 };
 
-async function parseSubmission(req: Request, input: SubmissionInput, horizonDays: number) {
+async function parseSubmission(req: Request, input: Availability, horizonDays: number) {
   const client = clientKey(req);
   return ingest(
     { text: input.text, images: input.images, tz: input.tz, now: Date.now(), horizonDays },
@@ -126,13 +128,32 @@ export async function upsertParticipant(
   return { participantId: p.id, editToken };
 }
 
-export async function removeParticipant(slug: string, participantId: string, editToken: string) {
+// Anyone with the meeting link is trusted to remove or replace anyone's entry. What they can't do is
+// read someone else's raw availability: that only comes back to its owner, via getOwnEntry.
+export async function removeParticipant(slug: string, id: string) {
   const [p] = await db()
-    .select()
+    .delete(participants)
+    .where(and(eq(participants.id, id), eq(participants.meetingId, slug)))
+    .returning({ id: participants.id });
+  if (!p) throw notFound("That person is no longer in this meeting.");
+}
+
+export const ReplacementInput = SubmissionInput.omit({ name: true });
+
+/** Overwrites someone's availability without revealing what they had; their name and edit token stay. */
+export async function replaceAvailability(req: Request, slug: string, id: string, input: Availability) {
+  const m = await getMeetingRow(slug);
+  const [existing] = await db()
+    .select({ id: participants.id })
     .from(participants)
-    .where(and(eq(participants.id, participantId), eq(participants.meetingId, slug)));
-  if (!p || !tokenMatches(editToken, p.editTokenHash)) throw notFound();
-  await db().delete(participants).where(eq(participants.id, p.id));
+    .where(and(eq(participants.id, id), eq(participants.meetingId, slug)));
+  if (!existing) throw notFound("That person is no longer in this meeting.");
+  const parsed = await parseSubmission(req, input, m.horizonDays);
+  const source = sourceOf(input);
+  await db()
+    .update(participants)
+    .set({ tz: input.tz, rawText: input.text, source, parsed, updatedAt: new Date() })
+    .where(eq(participants.id, id));
 }
 
 export type MeetingView = {
