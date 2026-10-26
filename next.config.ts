@@ -9,7 +9,9 @@ const chromiumFiles = [
 
 const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
+    // The collection route (add yourself) and /[id] (replace someone) both read links.
     "/api/meetings/\\[slug\\]/participants": chromiumFiles,
+    "/api/meetings/\\[slug\\]/participants/\\[id\\]": chromiumFiles,
     "/api/meetings/\\[slug\\]/refresh": chromiumFiles,
   },
 };
