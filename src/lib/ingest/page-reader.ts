@@ -2,7 +2,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { TZDate } from "@date-fns/tz";
 import { format } from "date-fns";
-import type { Browser, Page } from "puppeteer-core";
+import type { Browser, HTTPRequest, Page } from "puppeteer-core";
 import { UserError } from "../errors";
 
 // Reads any scheduling/booking link (Calendly, cal.com, zcal, SavvyCal, Google appointment pages, …)
@@ -19,6 +19,10 @@ const MAX_TEXT = 6_000;
 const MAX_JSON_EACH = 25_000;
 const MAX_DIGEST = 40_000;
 const NAV_TIMEOUT = 15_000;
+// Hosts that refuse requests from Vercel's servers. When a relay is configured (RELAY_URL, RELAY_SECRET:
+// the Cloud Function in relay/), the page's requests to them are made from there instead.
+const RELAYED_HOSTS = new Set(["calendar-pa.clients6.google.com"]);
+const relayConfigured = () => !!(process.env.RELAY_URL && process.env.RELAY_SECRET);
 
 export class LinkError extends UserError {
   constructor(message: string) {
@@ -59,6 +63,22 @@ export async function assertPublicUrl(raw: string): Promise<URL> {
   if (!ips.length) throw new LinkError("We couldn't reach that link.");
   if (ips.some(isPrivateIp)) throw new LinkError("That link isn't public.");
   return url;
+}
+
+/** Answers an intercepted request with the response the relay got for it. */
+async function relayRequest(req: HTTPRequest) {
+  const headers = { ...req.headers() };
+  // The browser only adds Origin after interception, and the API checks it.
+  if (!headers.origin && req.frame()) headers.origin = new URL(req.frame()!.url()).origin;
+  const res = await fetch(process.env.RELAY_URL!, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-relay-secret": process.env.RELAY_SECRET! },
+    body: JSON.stringify({ url: req.url(), method: req.method(), headers, body: req.postData() }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`Relay answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const out = (await res.json()) as { status: number; headers: Record<string, string>; body: string };
+  await req.respond({ status: out.status, headers: out.headers, body: Buffer.from(out.body, "base64") });
 }
 
 async function launch(): Promise<Browser> {
@@ -271,6 +291,11 @@ export async function readPage(rawUrl: string, tz: string): Promise<string> {
       } catch {}
       const blockedHost = host === "localhost" || (isIP(host) > 0 && isPrivateIp(host));
       if (blockedHost || type === "image" || type === "media" || type === "font") req.abort().catch(() => {});
+      else if (RELAYED_HOSTS.has(host) && relayConfigured())
+        relayRequest(req).catch((e) => {
+          console.warn(`Relaying ${host} failed:`, e);
+          req.abort().catch(() => {});
+        });
       else req.continue().catch(() => {});
     });
     page.on("response", (res) => {

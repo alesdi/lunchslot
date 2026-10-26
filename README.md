@@ -13,7 +13,7 @@ Free to use and MIT licensed.
 
 - **The LLM only parses.** Each submission makes one call through [Vercel AI Gateway](https://vercel.com/ai-gateway), which turns the input into structured data: free ranges, busy ranges, booking-page slot starts, and soft preferences, all in local time (`src/lib/ingest/llm.ts`, schema in `src/lib/availability/schema.ts`).
 - **Matching is plain code.** `src/lib/match.ts` turns each person's data into UTC intervals, timezone- and DST-aware via `@date-fns/tz`. It intersects them on a 15-minute grid, scores candidates against everyone's preferences, and picks up to 3 slots, spread across different days where possible. If no time fits everyone, it shows the slots that fit the most people and says who is missing. Page views never cost an LLM call.
-- **Scheduling links are read without provider-specific code** (`src/lib/ingest/page-reader.ts`). The page is rendered in headless Chromium in the participant's time zone. The reader keeps the visible text plus any JSON the page loads that contains timestamps (ISO, or Unix seconds/milliseconds near today), which is where booking tools keep their slots. Month-view pages only load the month on screen, so if the page has a "Next month" button, the reader clicks it once to load the rest of the horizon. In code, it converts timestamps to local time, drops empty values, and compresses runs of evenly spaced start times ("starts every 30 min from 2026-10-07 09:00 through 11:30"). A month of Calendly or cal.com slots then costs about 1k tokens, and the model only copies runs. Only public http(s) hosts are allowed, and private IPs are blocked. Use `pnpm tsx scripts/probe-link.ts <url>` to see exactly what the LLM would receive (no LLM call). Google Calendar booking pages work locally, but Google's slot API refuses requests from Vercel's servers (403), so in production the reader recognizes Google's error page and asks for a screenshot instead.
+- **Scheduling links are read without provider-specific code** (`src/lib/ingest/page-reader.ts`). The page is rendered in headless Chromium in the participant's time zone. The reader keeps the visible text plus any JSON the page loads that contains timestamps (ISO, or Unix seconds/milliseconds near today), which is where booking tools keep their slots. Month-view pages only load the month on screen, so if the page has a "Next month" button, the reader clicks it once to load the rest of the horizon. In code, it converts timestamps to local time, drops empty values, and compresses runs of evenly spaced start times ("starts every 30 min from 2026-10-07 09:00 through 11:30"). A month of Calendly or cal.com slots then costs about 1k tokens, and the model only copies runs. Only public http(s) hosts are allowed, and private IPs are blocked. Use `pnpm tsx scripts/probe-link.ts <url>` to see exactly what the LLM would receive (no LLM call). Google Calendar booking pages work locally, but Google's slot API refuses requests from Vercel's servers (403). If a relay is configured (`RELAY_URL`, `RELAY_SECRET`), the reader sends just that API's requests through a small Google Cloud Function (`relay/`) and the page loads normally. Without one, or if the relay fails, the reader recognizes Google's error page and asks for a screenshot instead.
 - **Screenshots** are downscaled in the browser, sent once, and never stored.
 
 ## Cost and abuse controls
@@ -50,6 +50,18 @@ pnpm dev
 - `pnpm test`: matching engine unit tests
 - `pnpm eval [model...]`: model comparison (append `@none` / `@low` to set the reasoning level)
 - `pnpm db:generate`: create a migration after changing `src/db/schema.ts`
+
+### Google Calendar booking links (relay)
+
+A stopgap until people can connect their calendar directly. `relay/` is a dependency-free Cloud Function that forwards requests to an allowlist of hosts (only Google's appointment API) for callers with the shared secret. It relies on Google's internal API and on Google Cloud's network not being refused too, so it can break without notice.
+
+```bash
+SECRET=$(openssl rand -base64 32)
+gcloud functions deploy lunchslot-relay --gen2 --runtime=nodejs22 --region=us-east4 \
+  --source=relay --entry-point=relay --trigger-http --allow-unauthenticated \
+  --memory=256Mi --max-instances=3 --set-env-vars=RELAY_SECRET="$SECRET"
+# Then set RELAY_URL (the function's URL) and RELAY_SECRET on Vercel.
+```
 
 ## CI and deployment
 
