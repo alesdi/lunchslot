@@ -1,13 +1,22 @@
 import { z } from "zod";
 import { errorResponse } from "@/lib/http";
-import { removeParticipant, replaceAvailability, ReplacementInput } from "@/lib/service";
+import { getEntry, removeParticipant, SubmissionInput, updateParticipant } from "@/lib/service";
 
 const Id = z.string().uuid();
+
+export async function GET(_req: Request, ctx: RouteContext<"/api/meetings/[slug]/participants/[id]">) {
+  try {
+    const { slug, id } = await ctx.params;
+    return Response.json(await getEntry(slug, Id.parse(id)), { headers: { "cache-control": "no-store" } });
+  } catch (e) {
+    return errorResponse(e);
+  }
+}
 
 export async function PUT(req: Request, ctx: RouteContext<"/api/meetings/[slug]/participants/[id]">) {
   try {
     const { slug, id } = await ctx.params;
-    await replaceAvailability(req, slug, Id.parse(id), ReplacementInput.parse(await req.json()));
+    await updateParticipant(req, slug, Id.parse(id), SubmissionInput.parse(await req.json()));
     return Response.json({ ok: true });
   } catch (e) {
     return errorResponse(e);

@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { and, asc, eq, lt, sql } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
@@ -50,12 +50,6 @@ export const CreateMeetingInput = z.object({
   durationMin: z.number().int().min(5, "At least 5 minutes.").max(480, "At most 8 hours."),
 });
 
-const hashToken = (t: string) => createHash("sha256").update(t).digest("hex");
-const tokenMatches = (token: string, hash: string) => {
-  const a = Buffer.from(hashToken(token));
-  const b = Buffer.from(hash);
-  return a.length === b.length && timingSafeEqual(a, b);
-};
 
 async function parseSubmission(req: Request, input: Availability, horizonDays: number) {
   const client = clientKey(req);
@@ -93,57 +87,40 @@ async function getMeetingRow(slug: string) {
   return m;
 }
 
-export async function upsertParticipant(
-  req: Request,
-  slug: string,
-  input: SubmissionInput & { participantId?: string; editToken?: string },
-) {
+export async function addParticipant(req: Request, slug: string, input: SubmissionInput) {
   await getMeetingRow(slug);
-  let existing: typeof participants.$inferSelect | undefined;
-  if (input.participantId && input.editToken) {
-    [existing] = await db()
-      .select()
-      .from(participants)
-      .where(and(eq(participants.id, input.participantId), eq(participants.meetingId, slug)));
-    if (existing && !tokenMatches(input.editToken, existing.editTokenHash)) existing = undefined;
-  }
-  if (!existing) {
-    const count = (await db().select({ id: participants.id }).from(participants).where(eq(participants.meetingId, slug))).length;
-    if (count >= MAX_PARTICIPANTS) throw new UserError(`This meeting is full (${MAX_PARTICIPANTS} people max).`);
-  }
-
+  const count = (await db().select({ id: participants.id }).from(participants).where(eq(participants.meetingId, slug))).length;
+  if (count >= MAX_PARTICIPANTS) throw new UserError(`This meeting is full (${MAX_PARTICIPANTS} people max).`);
   const parsed = await parseSubmission(req, input, MAX_HORIZON_DAYS);
-  const source = sourceOf(input);
-
-  if (existing) {
-    await db()
-      .update(participants)
-      .set({ name: input.name, tz: input.tz, rawText: input.text, source, parsed, updatedAt: new Date() })
-      .where(eq(participants.id, existing.id));
-    return { participantId: existing.id, editToken: input.editToken! };
-  }
-  const editToken = randomBytes(24).toString("base64url");
   const [p] = await db()
     .insert(participants)
-    .values({ meetingId: slug, name: input.name, tz: input.tz, rawText: input.text, source, parsed, editTokenHash: hashToken(editToken) })
+    .values({
+      meetingId: slug,
+      name: input.name,
+      tz: input.tz,
+      rawText: input.text,
+      source: sourceOf(input),
+      parsed,
+      // Edit tokens are no longer checked, since anyone with the link can edit; the column is still required.
+      editTokenHash: randomBytes(32).toString("hex"),
+    })
     .returning({ id: participants.id });
-  return { participantId: p.id, editToken };
+  return { participantId: p.id };
 }
 
-// Anyone with the meeting link is trusted to remove or replace anyone's entry. What they can't do is
-// read someone else's raw availability: that only comes back to its owner, via getOwnEntry.
-export async function removeParticipant(slug: string, id: string) {
+// Anyone with the meeting link is trusted to read, edit or remove anyone's entry.
+
+/** What someone entered, to edit it. */
+export async function getEntry(slug: string, id: string) {
   const [p] = await db()
-    .delete(participants)
-    .where(and(eq(participants.id, id), eq(participants.meetingId, slug)))
-    .returning({ id: participants.id });
+    .select({ name: participants.name, tz: participants.tz, text: participants.rawText })
+    .from(participants)
+    .where(and(eq(participants.id, id), eq(participants.meetingId, slug)));
   if (!p) throw notFound("That person is no longer in this meeting.");
+  return p;
 }
 
-export const ReplacementInput = SubmissionInput.omit({ name: true });
-
-/** Overwrites someone's availability without revealing what they had; their name and edit token stay. */
-export async function replaceAvailability(req: Request, slug: string, id: string, input: Availability) {
+export async function updateParticipant(req: Request, slug: string, id: string, input: SubmissionInput) {
   await getMeetingRow(slug);
   const [existing] = await db()
     .select({ id: participants.id })
@@ -151,11 +128,18 @@ export async function replaceAvailability(req: Request, slug: string, id: string
     .where(and(eq(participants.id, id), eq(participants.meetingId, slug)));
   if (!existing) throw notFound("That person is no longer in this meeting.");
   const parsed = await parseSubmission(req, input, MAX_HORIZON_DAYS);
-  const source = sourceOf(input);
   await db()
     .update(participants)
-    .set({ tz: input.tz, rawText: input.text, source, parsed, updatedAt: new Date() })
+    .set({ name: input.name, tz: input.tz, rawText: input.text, source: sourceOf(input), parsed, updatedAt: new Date() })
     .where(eq(participants.id, id));
+}
+
+export async function removeParticipant(slug: string, id: string) {
+  const [p] = await db()
+    .delete(participants)
+    .where(and(eq(participants.id, id), eq(participants.meetingId, slug)))
+    .returning({ id: participants.id });
+  if (!p) throw notFound("That person is no longer in this meeting.");
 }
 
 export type MeetingView = {
@@ -265,11 +249,3 @@ export async function refreshMeeting(slug: string, view: ViewOptions = DEFAULT_V
 }
 
 /** Raw text of your own entry, so you can edit it. */
-export async function getOwnEntry(slug: string, participantId: string, editToken: string) {
-  const [p] = await db()
-    .select()
-    .from(participants)
-    .where(and(eq(participants.id, participantId), eq(participants.meetingId, slug)));
-  if (!p || !tokenMatches(editToken, p.editTokenHash)) throw notFound();
-  return { name: p.name, tz: p.tz, text: p.rawText };
-}

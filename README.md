@@ -5,7 +5,9 @@ Find a meeting time that works for everyone, without accounts or calendar access
 1. **Create**: pick a length (30 min by default) and, optionally, a title. Recent meetings you've created are offered as presets.
 2. **Share**: copy the link and send it to everyone.
 3. **Your availability**: everyone, including you, writes their availability however they like ("Tue and Thu after 2pm, avoid lunch"), pastes a scheduling link (Calendly, cal.com, zcal…), or drops a calendar screenshot. Google Calendar booking pages can't be read from the server (see below), so for those a screenshot works best. The time zone is prefilled from the browser and can be changed.
-4. **Best times**: the page shows the 3 best times for the group and updates as people reply.
+4. **Best times**: the page shows up to 3 best times for the group and updates as people reply.
+
+Everyone with the link is trusted: anyone can add someone else, and see, edit or remove anyone's entry.
 
 Free to use and MIT licensed.
 

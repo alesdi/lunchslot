@@ -2,9 +2,11 @@
 
 import { useMemo, useSyncExternalStore } from "react";
 
-export type Ownership = { participantId: string; editToken: string };
-/** An entry this browser can edit. `other` marks one added for someone else rather than the viewer. */
-export type OwnedEntry = Ownership & { other?: boolean };
+/**
+ * An entry added from this browser. `other` marks one added for someone else rather than the viewer.
+ * (Older versions also stored an edit token, which is no longer needed.)
+ */
+export type OwnedEntry = { participantId: string; other?: boolean };
 
 const ownerKey = (slug: string) => `lunchslot:${slug}`;
 const NAME_KEY = "lunchslot:name";

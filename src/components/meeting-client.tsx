@@ -17,7 +17,6 @@ import {
   useStoredName,
   useViewerTz,
   type OwnedEntry,
-  type Ownership,
 } from "@/lib/client";
 import { AvailabilityInput } from "./availability-input";
 import { FormError, NameField, SubmitButton } from "./form-bits";
@@ -37,14 +36,13 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
   const [view, setView] = useState(initial);
   const viewerTz = useViewerTz();
   const now = useNow();
-  // Entries this browser can edit: the viewer's own, plus any they added for people without the link.
+  // Entries added from this browser: the viewer's own, plus any they added for people without the link.
   const owned = useOwnedEntries(slug);
   const isCreator = useRecentMeetings().some((m) => m.slug === slug);
-  const [editing, setEditing] = useState<OwnedEntry | null>(null);
+  // Anyone's entry can be edited by anyone with the link.
+  const [editing, setEditing] = useState<Participant | null>(null);
   // Adding a new entry for someone else, who then never needs the link.
   const [adding, setAdding] = useState(false);
-  // Someone else whose availability is being replaced. Their current entry is never shown, only overwritten.
-  const [replacing, setReplacing] = useState<Participant | null>(null);
   const [peek, setPeek] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -108,13 +106,14 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
     };
   }, [refresh]);
 
-  const ownedEntry = (p: Participant) => owned.find((o) => o.participantId === p.id);
+  const ownedEntry = (p: Participant): OwnedEntry | undefined => owned.find((o) => o.participantId === p.id);
   const me = view.participants.find((p) => ownedEntry(p) && !ownedEntry(p)?.other);
   const joined = !!me;
-  const showForm = (!joined && !peek) || !!editing || !!replacing || adding;
+  const showForm = (!joined && !peek) || !!editing || adding;
   // Whether the form is about someone other than the viewer.
-  const forOther = adding || !!editing?.other;
-  const editingName = editing && view.participants.find((p) => p.id === editing.participantId)?.name;
+  const forOther = adding || (!!editing && editing.id !== me?.id);
+  // Editing an entry this browser didn't add: likely someone else's, possibly by a misclick.
+  const editingOthers = !!editing && !ownedEntry(editing);
   const total = view.participants.length;
   const idle = view.participants.filter((p) => !p.hasTimes).map((p) => p.name);
   const requiredNames = view.participants.filter((p) => view.required.includes(p.id)).map((p) => p.name);
@@ -142,24 +141,25 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
     }
   }
 
-  async function startEdit(o: OwnedEntry) {
+  async function startEdit(p: Participant) {
     setError(null);
     try {
-      const { participantId, editToken } = o;
-      const entry = await postJson<{ name: string; tz: string; text: string }>(`/api/meetings/${slug}/me`, { participantId, editToken });
+      const res = await fetch(`/api/meetings/${slug}/participants/${p.id}`, { cache: "no-store" });
+      const entry = await res.json();
+      if (!res.ok) throw new Error(entry.error ?? "Something went wrong. Please try again.");
       setName(entry.name);
       setTz(entry.tz);
       setText(entry.text);
       setImages([]);
-      setEditing(o);
+      setEditing(p);
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
-  async function leave(o: OwnedEntry) {
-    await postJson(`/api/meetings/${slug}/participants/${o.participantId}`, {}, "DELETE").catch(() => {});
-    storage.forgetEntry(slug, o.participantId);
+  async function leave(p: Participant) {
+    await postJson(`/api/meetings/${slug}/participants/${p.id}`, {}, "DELETE").catch(() => {});
+    storage.forgetEntry(slug, p.id);
     setText("");
     refresh();
   }
@@ -184,18 +184,9 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
     refresh();
   }
 
-  function startReplace(p: Participant) {
-    setError(null);
-    setTz(p.tz);
-    setText("");
-    setImages([]);
-    setReplacing(p);
-  }
-
   function closeForm() {
     setName(null);
     setTz(null);
-    setReplacing(null);
     setEditing(null);
     setAdding(false);
   }
@@ -205,22 +196,12 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
     setError(null);
     setBusy(true);
     try {
-      if (replacing) {
-        await postJson(`/api/meetings/${slug}/participants/${replacing.id}`, { tz, text, images }, "PUT");
-        closeForm();
-        setText("");
-        setImages([]);
-        await refresh();
-        return;
+      if (editing) {
+        await postJson(`/api/meetings/${slug}/participants/${editing.id}`, { name, tz, text, images }, "PUT");
+      } else {
+        const res = await postJson<{ participantId: string }>(`/api/meetings/${slug}/participants`, { name, tz, text, images });
+        storage.saveEntry(slug, forOther ? { ...res, other: true } : res);
       }
-      const res = await postJson<Ownership>(`/api/meetings/${slug}/participants`, {
-        name,
-        tz,
-        text,
-        images,
-        ...(editing ? { participantId: editing.participantId, editToken: editing.editToken } : {}),
-      });
-      storage.saveEntry(slug, forOther ? { ...res, other: true } : res);
       // Someone else's name and timezone aren't the viewer's defaults.
       if (!forOther) {
         storage.setName(name);
@@ -241,7 +222,7 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
 
   const steps = isCreator ? CREATOR_STEPS : INVITEE_STEPS;
   const current = (isCreator ? 2 : 0) + (showForm ? 0 : 1);
-  const othersIn = view.participants.filter((p) => p.id !== (editing?.participantId ?? me?.id)).map((p) => p.name);
+  const othersIn = view.participants.filter((p) => p.id !== (editing?.id ?? me?.id)).map((p) => p.name);
   const hasLink = /https?:\/\//i.test(text);
 
   return (
@@ -263,24 +244,20 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
       {showForm ? (
         <section aria-labelledby="add">
           <h2 id="add" className="mb-1 text-xl font-bold">
-            {replacing
-              ? `Replace ${replacing.name}'s availability`
-              : adding
-                ? "Add someone else"
-                : editing?.other
-                  ? editingName
-                    ? `Edit ${editingName}'s availability`
-                    : "Edit their availability"
-                  : editing
-                    ? "Edit your availability"
-                    : "When are you free?"}
+            {adding
+              ? "Add someone else"
+              : editing && forOther
+                ? `Edit ${editing.name}'s availability`
+                : editing
+                  ? "Edit your availability"
+                  : "When are you free?"}
           </h2>
-          {replacing ? (
-            // Loud on purpose: Replace sits right next to Remove, so this may well be a misclick.
+          {editingOthers ? (
+            // Loud on purpose: every row has Edit, so this may well be a misclick.
             <div role="alert" className="mt-4 mb-6 rounded-lg border-2 border-warn bg-surface px-4 py-3">
-              <p className="font-bold text-warn">You&apos;re editing {replacing.name}&apos;s availability, not yours.</p>
+              <p className="font-bold text-warn">You&apos;re editing {editing.name}&apos;s availability, not yours.</p>
               <p className="mt-1 text-muted">
-                Whatever you add here replaces what {replacing.name} entered. Their current times stay private.{" "}
+                What you save here changes what {editing.name} entered.{" "}
                 <button type="button" onClick={closeForm} className="text-ink underline underline-offset-2">
                   Not what you meant? Go back
                 </button>
@@ -299,7 +276,7 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
           )}
           <form onSubmit={submit} className="space-y-6">
             <div className="flex flex-col gap-6 sm:flex-row">
-              {!replacing && <NameField value={name} onChange={setName} disabled={busy} label={forOther ? "Their name" : undefined} />}
+              <NameField value={name} onChange={setName} disabled={busy} label={forOther ? "Their name" : undefined} />
               <TimezoneField value={tz} onChange={setTz} disabled={busy} />
             </div>
             <AvailabilityInput text={text} onText={setText} images={images} onImages={setImages} disabled={busy} />
@@ -308,19 +285,19 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
               <SubmitButton
                 busy={busy}
                 busyLabel={hasLink ? "Opening your link…" : "Reading your availability…"}
-                disabled={(!replacing && !name.trim()) || !isValidTz(tz) || (!text.trim() && !images.length)}
+                disabled={!name.trim() || !isValidTz(tz) || (!text.trim() && !images.length)}
               >
-                {replacing
-                  ? `Replace ${replacing.name}'s availability`
-                  : editing
-                    ? "Save changes"
-                    : adding
-                      ? name.trim()
-                        ? `Add ${name.trim()}'s availability`
-                        : "Add their availability"
-                      : "Add my availability"}
+                {editing
+                  ? editingOthers
+                    ? `Save ${editing.name}'s availability`
+                    : "Save changes"
+                  : adding
+                    ? name.trim()
+                      ? `Add ${name.trim()}'s availability`
+                      : "Add their availability"
+                    : "Add my availability"}
               </SubmitButton>
-              {editing || replacing || adding ? (
+              {editing || adding ? (
                 <button type="button" onClick={closeForm} className="text-muted underline underline-offset-2">
                   Cancel
                 </button>
@@ -436,29 +413,19 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
                         {!p.hasTimes && <span className="text-warn">. No times in the {horizonPhrase(view.horizonDays)}</span>}
                       </div>
                     </div>
-                    {own ? (
-                      <div className="flex shrink-0 gap-3 text-sm">
-                        <button type="button" onClick={() => startEdit(own)} className="underline underline-offset-2">
-                          Edit
-                        </button>
-                        <button type="button" onClick={() => leave(own)} className="text-muted underline underline-offset-2 hover:text-ink">
-                          Remove
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex shrink-0 gap-3 text-sm">
-                        <button type="button" onClick={() => startReplace(p)} className="underline underline-offset-2">
-                          Replace
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeOther(p)}
-                          className="text-muted underline underline-offset-2 hover:text-ink"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    )}
+                    <div className="flex shrink-0 gap-3 text-sm">
+                      <button type="button" onClick={() => startEdit(p)} className="underline underline-offset-2">
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        // Only entries this browser didn't add ask first.
+                        onClick={() => (own ? leave(p) : removeOther(p))}
+                        className="text-muted underline underline-offset-2 hover:text-ink"
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </li>
                 );
               })}
