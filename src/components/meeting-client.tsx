@@ -5,16 +5,18 @@ import type { ParticipantSource } from "@/db/schema";
 import { timeAgo } from "@/lib/format";
 import { HORIZONS, horizonPhrase } from "@/lib/horizon";
 import type { MeetingView } from "@/lib/service";
+import type { ViewOptions } from "@/lib/view-options";
 import {
   copyText,
   isValidTz,
   postJson,
   storage,
   useNow,
-  useOwner,
+  useOwnedEntries,
   useRecentMeetings,
   useStoredName,
   useViewerTz,
+  type OwnedEntry,
   type Ownership,
 } from "@/lib/client";
 import { AvailabilityInput } from "./availability-input";
@@ -35,9 +37,12 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
   const [view, setView] = useState(initial);
   const viewerTz = useViewerTz();
   const now = useNow();
-  const owner = useOwner(slug);
+  // Entries this browser can edit: the viewer's own, plus any they added for people without the link.
+  const owned = useOwnedEntries(slug);
   const isCreator = useRecentMeetings().some((m) => m.slug === slug);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState<OwnedEntry | null>(null);
+  // Adding a new entry for someone else, who then never needs the link.
+  const [adding, setAdding] = useState(false);
   // Someone else whose availability is being replaced. Their current entry is never shown, only overwritten.
   const [replacing, setReplacing] = useState<Participant | null>(null);
   const [peek, setPeek] = useState(false);
@@ -53,24 +58,37 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshState, setRefreshState] = useState<"idle" | "busy" | "done">("idle");
-  const [horizon, setHorizonState] = useState(initial.horizonDays);
-  // Read by in-flight requests, so a poll for the previous range can't overwrite the new one.
-  const horizonRef = useRef(horizon);
+  // How the viewer looks at the best times. Mirrored in a ref, so a response to a request made before
+  // the last change (a poll for the previous range, say) is dropped instead of shown.
+  const [viewOpts, setViewOptsState] = useState<ViewOptions>({ horizonDays: initial.horizonDays, required: initial.required });
+  const viewOptsRef = useRef({ ...viewOpts, version: 0 });
   const horizonId = useId();
 
-  const showView = useCallback((v: MeetingView) => {
-    if (v.horizonDays === horizonRef.current) setView(v);
+  /** Runs a request for the current view options, and shows its view only if they haven't changed since. */
+  const loadView = useCallback(async (request: (o: ViewOptions) => Promise<MeetingView | null>) => {
+    const { version, ...opts } = viewOptsRef.current;
+    const v = await request(opts);
+    if (v && viewOptsRef.current.version === version) setView(v);
   }, []);
 
-  const refresh = useCallback(async () => {
-    const res = await fetch(`/api/meetings/${slug}?days=${horizonRef.current}`, { cache: "no-store" });
-    if (res.ok) showView(await res.json());
-  }, [slug, showView]);
+  const refresh = useCallback(
+    () =>
+      loadView(async ({ horizonDays, required }) => {
+        const res = await fetch(`/api/meetings/${slug}?days=${horizonDays}&required=${required.join(",")}`, { cache: "no-store" });
+        return res.ok ? res.json() : null;
+      }),
+    [slug, loadView],
+  );
 
-  function setHorizon(days: number) {
-    horizonRef.current = days;
-    setHorizonState(days);
+  function setViewOpts(next: ViewOptions) {
+    viewOptsRef.current = { ...next, version: viewOptsRef.current.version + 1 };
+    setViewOptsState(next);
     refresh();
+  }
+
+  function toggleRequired(id: string) {
+    const { required } = viewOpts;
+    setViewOpts({ ...viewOpts, required: required.includes(id) ? required.filter((r) => r !== id) : [...required, id] });
   }
 
   useEffect(() => {
@@ -83,11 +101,16 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
     };
   }, [refresh]);
 
-  const me = owner ? view.participants.find((p) => p.id === owner.participantId) : undefined;
+  const ownedEntry = (p: Participant) => owned.find((o) => o.participantId === p.id);
+  const me = view.participants.find((p) => ownedEntry(p) && !ownedEntry(p)?.other);
   const joined = !!me;
-  const showForm = (!joined && !peek) || editing || !!replacing;
+  const showForm = (!joined && !peek) || !!editing || !!replacing || adding;
+  // Whether the form is about someone other than the viewer.
+  const forOther = adding || !!editing?.other;
+  const editingName = editing && view.participants.find((p) => p.id === editing.participantId)?.name;
   const total = view.participants.length;
   const idle = view.participants.filter((p) => !p.hasTimes).map((p) => p.name);
+  const requiredNames = view.participants.filter((p) => view.required.includes(p.id)).map((p) => p.name);
 
   async function copyLink() {
     if (await copyText(`${location.origin}/m/${slug}`)) {
@@ -101,7 +124,9 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
     setError(null);
     setRefreshState("busy");
     try {
-      showView(await postJson<MeetingView>(`/api/meetings/${slug}/refresh`, { days: horizonRef.current }));
+      await loadView(({ horizonDays, required }) =>
+        postJson<MeetingView>(`/api/meetings/${slug}/refresh`, { days: horizonDays, required }),
+      );
       setRefreshState("done");
       setTimeout(() => setRefreshState("idle"), 2500);
     } catch (e) {
@@ -110,28 +135,35 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
     }
   }
 
-  async function startEdit() {
-    if (!owner) return;
+  async function startEdit(o: OwnedEntry) {
     setError(null);
     try {
-      const entry = await postJson<{ name: string; tz: string; text: string }>(`/api/meetings/${slug}/me`, owner);
+      const { participantId, editToken } = o;
+      const entry = await postJson<{ name: string; tz: string; text: string }>(`/api/meetings/${slug}/me`, { participantId, editToken });
       setName(entry.name);
       setTz(entry.tz);
       setText(entry.text);
       setImages([]);
-      setEditing(true);
+      setEditing(o);
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
-  async function leave() {
-    if (!owner) return;
-    await postJson(`/api/meetings/${slug}/participants/${owner.participantId}`, {}, "DELETE").catch(() => {});
-    storage.clearOwner(slug);
-    setEditing(false);
+  async function leave(o: OwnedEntry) {
+    await postJson(`/api/meetings/${slug}/participants/${o.participantId}`, {}, "DELETE").catch(() => {});
+    storage.forgetEntry(slug, o.participantId);
     setText("");
     refresh();
+  }
+
+  function startAdd() {
+    setError(null);
+    setName("");
+    setTz(null);
+    setText("");
+    setImages([]);
+    setAdding(true);
   }
 
   async function removeOther(p: Participant) {
@@ -154,9 +186,11 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
   }
 
   function closeForm() {
-    if (replacing) setTz(null);
+    setName(null);
+    setTz(null);
     setReplacing(null);
-    setEditing(false);
+    setEditing(null);
+    setAdding(false);
   }
 
   async function submit(e: React.FormEvent) {
@@ -177,13 +211,17 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
         tz,
         text,
         images,
-        ...(joined && owner ? owner : {}),
+        ...(editing ? { participantId: editing.participantId, editToken: editing.editToken } : {}),
       });
-      storage.setOwner(slug, res);
-      storage.setName(name);
-      storage.setTz(tz);
-      setEditing(false);
-      setPeek(false);
+      storage.saveEntry(slug, forOther ? { ...res, other: true } : res);
+      // Someone else's name and timezone aren't the viewer's defaults.
+      if (!forOther) {
+        storage.setName(name);
+        storage.setTz(tz);
+      }
+      closeForm();
+      // Back to the best times, even if the viewer hasn't added themselves yet.
+      setPeek(forOther);
       setText("");
       setImages([]);
       await refresh();
@@ -196,7 +234,7 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
 
   const steps = isCreator ? CREATOR_STEPS : INVITEE_STEPS;
   const current = (isCreator ? 2 : 0) + (showForm ? 0 : 1);
-  const othersIn = view.participants.filter((p) => p.id !== me?.id).map((p) => p.name);
+  const othersIn = view.participants.filter((p) => p.id !== (editing?.participantId ?? me?.id)).map((p) => p.name);
   const hasLink = /https?:\/\//i.test(text);
 
   return (
@@ -218,7 +256,17 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
       {showForm ? (
         <section aria-labelledby="add">
           <h2 id="add" className="mb-1 text-xl font-bold">
-            {replacing ? `Replace ${replacing.name}'s availability` : editing ? "Edit your availability" : "When are you free?"}
+            {replacing
+              ? `Replace ${replacing.name}'s availability`
+              : adding
+                ? "Add someone else"
+                : editing?.other
+                  ? editingName
+                    ? `Edit ${editingName}'s availability`
+                    : "Edit their availability"
+                  : editing
+                    ? "Edit your availability"
+                    : "When are you free?"}
           </h2>
           {replacing ? (
             // Loud on purpose: Replace sits right next to Remove, so this may well be a misclick.
@@ -231,6 +279,10 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
                 </button>
               </p>
             </div>
+          ) : adding ? (
+            <p className="mb-6 text-muted">
+              For someone who won&apos;t open the link themselves. Their entry stays editable from this browser.
+            </p>
           ) : (
             <p className="mb-6 text-muted">
               {othersIn.length > 0
@@ -240,7 +292,7 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
           )}
           <form onSubmit={submit} className="space-y-6">
             <div className="flex flex-col gap-6 sm:flex-row">
-              {!replacing && <NameField value={name} onChange={setName} disabled={busy} />}
+              {!replacing && <NameField value={name} onChange={setName} disabled={busy} label={forOther ? "Their name" : undefined} />}
               <TimezoneField value={tz} onChange={setTz} disabled={busy} />
             </div>
             <AvailabilityInput text={text} onText={setText} images={images} onImages={setImages} disabled={busy} />
@@ -251,9 +303,17 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
                 busyLabel={hasLink ? "Opening your link…" : "Reading your availability…"}
                 disabled={(!replacing && !name.trim()) || !isValidTz(tz) || (!text.trim() && !images.length)}
               >
-                {replacing ? `Replace ${replacing.name}'s availability` : editing ? "Save changes" : "Add my availability"}
+                {replacing
+                  ? `Replace ${replacing.name}'s availability`
+                  : editing
+                    ? "Save changes"
+                    : adding
+                      ? name.trim()
+                        ? `Add ${name.trim()}'s availability`
+                        : "Add their availability"
+                      : "Add my availability"}
               </SubmitButton>
-              {editing || replacing ? (
+              {editing || replacing || adding ? (
                 <button type="button" onClick={closeForm} className="text-muted underline underline-offset-2">
                   Cancel
                 </button>
@@ -289,8 +349,8 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
               </label>
               <select
                 id={horizonId}
-                value={horizon}
-                onChange={(e) => setHorizon(Number(e.target.value))}
+                value={viewOpts.horizonDays}
+                onChange={(e) => setViewOpts({ ...viewOpts, horizonDays: Number(e.target.value) })}
                 className="rounded-lg border border-line bg-surface px-3 py-1.5 font-semibold text-ink outline-none focus:border-ink"
               >
                 {HORIZONS.map((h) => (
@@ -301,8 +361,40 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
               </select>
               {viewerTz && <span>Shown in {viewerTz.replace(/_/g, " ")}.</span>}
             </div>
+            {total > 1 && (
+              <fieldset className="mb-5">
+                <legend className="mb-2 text-sm text-muted">
+                  <span className="font-semibold text-ink">Must attend</span>: only show times they can all make
+                </legend>
+                <div className="flex flex-wrap gap-2">
+                  {view.participants.map((p) => {
+                    const on = viewOpts.required.includes(p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => toggleRequired(p.id)}
+                        className={`rounded-full px-3 py-1 text-sm font-semibold ${
+                          on ? "bg-ink text-paper" : "border border-line text-muted hover:border-ink hover:text-ink"
+                        }`}
+                      >
+                        {p.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            )}
             {viewerTz ? (
-              <SlotList slots={view.slots} total={total - idle.length} idle={idle} tz={viewerTz} range={horizonPhrase(view.horizonDays)} />
+              <SlotList
+                slots={view.slots}
+                total={total - idle.length}
+                idle={idle}
+                required={requiredNames}
+                tz={viewerTz}
+                range={horizonPhrase(view.horizonDays)}
+              />
             ) : (
               <div className="h-40" />
             )}
@@ -322,43 +414,53 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
               Who&apos;s in
             </h2>
             <ul className="divide-y divide-line border-y border-line">
-              {view.participants.map((p) => (
-                <li key={p.id} className="flex items-baseline justify-between gap-4 py-3">
-                  <div className="min-w-0">
-                    <span className="font-semibold">{p.name}</span>
-                    {p.id === me?.id && <span className="ml-2 text-sm text-muted">(you)</span>}
-                    <div className="text-sm text-muted">
-                      {SOURCE_LABELS[p.source]}
-                      {now !== null && <>, updated {timeAgo(p.updatedAt, now)}</>}
-                      {!p.hasTimes && <span className="text-warn">. No times in the {horizonPhrase(view.horizonDays)}</span>}
+              {view.participants.map((p) => {
+                const own = ownedEntry(p);
+                return (
+                  <li key={p.id} className="flex items-baseline justify-between gap-4 py-3">
+                    <div className="min-w-0">
+                      <span className="font-semibold">{p.name}</span>
+                      {own && <span className="ml-2 text-sm text-muted">{own.other ? "(added by you)" : "(you)"}</span>}
+                      <div className="text-sm text-muted">
+                        {SOURCE_LABELS[p.source]}
+                        {now !== null && <>, updated {timeAgo(p.updatedAt, now)}</>}
+                        {!p.hasTimes && <span className="text-warn">. No times in the {horizonPhrase(view.horizonDays)}</span>}
+                      </div>
                     </div>
-                  </div>
-                  {p.id === me?.id ? (
-                    <div className="flex shrink-0 gap-3 text-sm">
-                      <button type="button" onClick={startEdit} className="underline underline-offset-2">
-                        Edit
-                      </button>
-                      <button type="button" onClick={leave} className="text-muted underline underline-offset-2 hover:text-ink">
-                        Remove
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex shrink-0 gap-3 text-sm">
-                      <button type="button" onClick={() => startReplace(p)} className="underline underline-offset-2">
-                        Replace
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeOther(p)}
-                        className="text-muted underline underline-offset-2 hover:text-ink"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  )}
-                </li>
-              ))}
+                    {own ? (
+                      <div className="flex shrink-0 gap-3 text-sm">
+                        <button type="button" onClick={() => startEdit(own)} className="underline underline-offset-2">
+                          Edit
+                        </button>
+                        <button type="button" onClick={() => leave(own)} className="text-muted underline underline-offset-2 hover:text-ink">
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex shrink-0 gap-3 text-sm">
+                        <button type="button" onClick={() => startReplace(p)} className="underline underline-offset-2">
+                          Replace
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeOther(p)}
+                          className="text-muted underline underline-offset-2 hover:text-ink"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
+            <button
+              type="button"
+              onClick={startAdd}
+              className="mt-4 rounded-lg border border-ink px-4 py-2 font-semibold hover:bg-ink hover:text-paper"
+            >
+              Add someone else
+            </button>
             <FormError error={error} />
           </section>
         </div>

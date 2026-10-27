@@ -8,7 +8,8 @@ import { ingest } from "./ingest";
 import { findUrls } from "./ingest/page-reader";
 import { findSlots, type Slot } from "./match";
 import { UserError } from "./errors";
-import { DEFAULT_HORIZON_DAYS, MAX_HORIZON_DAYS } from "./horizon";
+import { MAX_HORIZON_DAYS } from "./horizon";
+import { DEFAULT_VIEW, type ViewOptions } from "./view-options";
 
 const notFound = (msg = "Not found.") => new UserError(msg, 404);
 
@@ -163,6 +164,8 @@ export type MeetingView = {
   durationMin: number;
   /** How far ahead `slots` were searched. */
   horizonDays: number;
+  /** Ids of the participants every slot includes, as the viewer asked. */
+  required: string[];
   participants: {
     id: string;
     name: string;
@@ -175,7 +178,7 @@ export type MeetingView = {
   slots: Slot[];
 };
 
-export async function getMeetingView(slug: string, horizonDays = DEFAULT_HORIZON_DAYS): Promise<MeetingView> {
+export async function getMeetingView(slug: string, { horizonDays, required }: ViewOptions = DEFAULT_VIEW): Promise<MeetingView> {
   const m = await getMeetingRow(slug);
   const rows = await db()
     .select({
@@ -189,12 +192,13 @@ export async function getMeetingView(slug: string, horizonDays = DEFAULT_HORIZON
     .from(participants)
     .where(eq(participants.meetingId, slug))
     .orderBy(asc(participants.createdAt));
-  const { slots, idle } = findSlots(rows, { durationMin: m.durationMin, now: Date.now(), horizonDays });
+  const { slots, idle } = findSlots(rows, { durationMin: m.durationMin, now: Date.now(), horizonDays, required });
   return {
     slug,
     title: m.title,
     durationMin: m.durationMin,
     horizonDays,
+    required: rows.filter((r) => required.includes(r.id)).map((r) => r.id),
     participants: rows.map((r) => ({
       id: r.id,
       name: r.name,
@@ -212,7 +216,7 @@ export async function getMeetingView(slug: string, horizonDays = DEFAULT_HORIZON
  * but the work runs at most once per REFRESH_EVERY_HOURS per meeting; otherwise this is a no-op.
  * Written and screenshot entries are kept as submitted.
  */
-export async function refreshMeeting(slug: string, horizonDays = DEFAULT_HORIZON_DAYS): Promise<MeetingView> {
+export async function refreshMeeting(slug: string, view: ViewOptions = DEFAULT_VIEW): Promise<MeetingView> {
   await getMeetingRow(slug);
   // Claim the refresh atomically so concurrent clicks don't each re-read every link.
   // A new meeting counts as fresh: none of its links can be older than the meeting itself.
@@ -226,7 +230,7 @@ export async function refreshMeeting(slug: string, horizonDays = DEFAULT_HORIZON
       ),
     )
     .returning({ refreshedAt: meetings.refreshedAt });
-  if (!claimed) return getMeetingView(slug, horizonDays);
+  if (!claimed) return getMeetingView(slug, view);
 
   const queue = await db()
     .select()
@@ -257,7 +261,7 @@ export async function refreshMeeting(slug: string, horizonDays = DEFAULT_HORIZON
       for (let p = queue.shift(); p; p = queue.shift()) await refreshOne(p);
     }),
   );
-  return getMeetingView(slug, horizonDays);
+  return getMeetingView(slug, view);
 }
 
 /** Raw text of your own entry, so you can edit it. */

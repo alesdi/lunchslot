@@ -113,7 +113,8 @@ export type MatchResult = {
 
 export function findSlots(
   participants: MatchParticipant[],
-  opts: { durationMin: number; now: number; horizonDays: number },
+  /** `required`: ids of people every suggested time must include. */
+  opts: { durationMin: number; now: number; horizonDays: number; required?: string[] },
 ): MatchResult {
   const dur = opts.durationMin * MIN;
   const from = Math.ceil((opts.now + MIN_LEAD) / GRID) * GRID;
@@ -126,10 +127,13 @@ export function findSlots(
   }));
   const people = prepared.filter((p) => p.free.some((i) => i.e - i.s >= dur));
   const idle = prepared.filter((p) => !people.includes(p)).map((p) => p.id);
-  return { slots: pickSlots(people, dur, from, to, opts.now), idle };
+  const required = prepared.filter((p) => opts.required?.includes(p.id));
+  // Someone who must attend but has no times in the range rules out every slot.
+  if (required.some((p) => !people.includes(p))) return { slots: [], idle };
+  return { slots: pickSlots(people, required, dur, from, to, opts.now), idle };
 }
 
-function pickSlots(people: Prepared[], dur: number, from: number, to: number, now: number): Slot[] {
+function pickSlots(people: Prepared[], required: Prepared[], dur: number, from: number, to: number, now: number): Slot[] {
   if (people.length === 0) return [];
   // With several people, a slot only one person can make isn't a useful suggestion.
   const need = people.length > 1 ? 2 : 1;
@@ -140,7 +144,7 @@ function pickSlots(people: Prepared[], dur: number, from: number, to: number, no
   for (let s = from; s + dur <= to; s += GRID) {
     const e = s + dur;
     const who = people.filter((p) => covers(p.free, s, e));
-    if (who.length >= need) cands.push({ s, e, who, ...scoreSlot(s, e, who) });
+    if (who.length >= need && required.every((p) => who.includes(p))) cands.push({ s, e, who, ...scoreSlot(s, e, who) });
   }
 
   // Each strategy picks its best slot; ties go to the earliest.

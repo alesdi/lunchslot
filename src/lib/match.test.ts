@@ -185,6 +185,34 @@ describe("findSlots", () => {
     expect(slots[0]).toMatchObject({ start: "2026-10-08T10:00:00.000Z", everyone: true });
   });
 
+  it("only suggests times the required people can make", () => {
+    const people = [
+      person("Ana", "UTC", { free: [range("2026-10-06", "10:00", "11:00"), range("2026-10-08", "10:00", "11:00")] }),
+      person("Bob", "UTC", { free: [range("2026-10-06", "10:00", "11:00")] }),
+      person("Cy", "UTC", { free: [range("2026-10-06", "10:00", "11:00"), range("2026-10-08", "10:00", "11:00")] }),
+      person("Di", "UTC", { free: [range("2026-10-08", "10:00", "11:00")] }),
+    ];
+    // Without Di required, three of four on the 6th wins every pick.
+    expect(findSlots(people, opts).slots.map((s) => s.start)).toEqual(["2026-10-06T10:00:00.000Z"]);
+    const { slots } = findSlots(people, { ...opts, required: ["Di"] });
+    expect(slots.length).toBeGreaterThan(0);
+    expect(slots.every((s) => s.available.includes("Di"))).toBe(true);
+    expect(slots[0]).toMatchObject({ start: "2026-10-08T10:00:00.000Z", missing: ["Bob"] });
+  });
+
+  it("suggests nothing when a required person has no times in the range", () => {
+    const { slots, idle } = findSlots(
+      [
+        person("Ana", "UTC", { free: [range("2026-10-06", "10:00", "11:00")] }),
+        person("Bob", "UTC", { free: [range("2026-10-06", "10:00", "11:00")] }),
+        person("Cy", "UTC", { free: [range("2026-10-30", "10:00", "11:00")] }), // past the 14-day range
+      ],
+      { ...opts, required: ["Cy"] },
+    );
+    expect(slots).toEqual([]);
+    expect(idle).toEqual(["Cy"]);
+  });
+
   it("falls back to best coverage when nobody fully overlaps", () => {
     const { slots } = findSlots(
       [

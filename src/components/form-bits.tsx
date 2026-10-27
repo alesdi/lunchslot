@@ -2,12 +2,23 @@
 
 import { useId } from "react";
 
-export function NameField({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
+export function NameField({
+  value,
+  onChange,
+  disabled,
+  label = "Your name",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  label?: string;
+}) {
   const id = useId();
+  const own = label === "Your name";
   return (
     <div className="flex-1">
       <label htmlFor={id} className="mb-2 block font-semibold">
-        Your name
+        {label}
       </label>
       <input
         id={id}
@@ -15,7 +26,7 @@ export function NameField({ value, onChange, disabled }: { value: string; onChan
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         maxLength={40}
-        autoComplete="given-name"
+        autoComplete={own ? "given-name" : "off"}
         className="w-full rounded-lg border border-line bg-surface px-4 py-2.5 outline-none focus:border-ink"
       />
     </div>

@@ -18,9 +18,23 @@ const list = (names: string[]) => new Intl.ListFormat(undefined, { type: "conjun
 
 /**
  * `total` counts only people with times in the range; `idle` names the rest, who are left out of the slots.
- * `range` is the searched range mid-sentence, like "next 7 days".
+ * `required` names the people every slot includes. `range` is the searched range mid-sentence, like "next 7 days".
  */
-export function SlotList({ slots, total, idle, tz, range }: { slots: Slot[]; total: number; idle: string[]; tz: string; range: string }) {
+export function SlotList({
+  slots,
+  total,
+  idle,
+  required,
+  tz,
+  range,
+}: {
+  slots: Slot[];
+  total: number;
+  idle: string[];
+  required: string[];
+  tz: string;
+  range: string;
+}) {
   // Highlight slots that weren't there on the previous render.
   const keys = slots.map((s) => s.start).join("|");
   const [prevKeys, setPrevKeys] = useState(keys);
@@ -31,9 +45,11 @@ export function SlotList({ slots, total, idle, tz, range }: { slots: Slot[]; tot
     setFresh(new Set(slots.map((s) => s.start).filter((k) => !before.has(k))));
   }
 
-  const idleNote = idle.length > 0 && (
+  // Required people without times get their own message, below.
+  const idleOthers = idle.filter((n) => !required.includes(n));
+  const idleNote = idleOthers.length > 0 && (
     <p className="mt-4 text-sm text-warn">
-      {list(idle)} {idle.length === 1 ? "has" : "have"} no times in the {range}, so they aren&apos;t counted. Look further
+      {list(idleOthers)} {idleOthers.length === 1 ? "has" : "have"} no times in the {range}, so they aren&apos;t counted. Look further
       ahead, or ask them to update their availability.
     </p>
   );
@@ -46,10 +62,18 @@ export function SlotList({ slots, total, idle, tz, range }: { slots: Slot[]; tot
     );
   }
   if (slots.length === 0) {
+    const idleRequired = required.filter((n) => idle.includes(n));
     return (
       <>
         <p className="rounded-lg border border-dashed border-line px-5 py-6 text-muted">
-          No time works for two or more people in the {range}. Look further ahead, or ask people to widen their availability.
+          {idleRequired.length > 0
+            ? `${list(idleRequired)} must attend but ${idleRequired.length === 1 ? "has" : "have"} no times in the ${range}.`
+            : required.length > 0
+              ? `No time in the ${range} works for ${required.length === 1 ? `${required[0]} and anyone else` : list(required)}.`
+              : `No time works for two or more people in the ${range}.`}{" "}
+          {required.length > 0
+            ? "Look further ahead, ask people to widen their availability, or require fewer people."
+            : "Look further ahead, or ask people to widen their availability."}
         </p>
         {idleNote}
       </>

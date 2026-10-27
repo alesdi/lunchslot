@@ -3,6 +3,8 @@
 import { useMemo, useSyncExternalStore } from "react";
 
 export type Ownership = { participantId: string; editToken: string };
+/** An entry this browser can edit. `other` marks one added for someone else rather than the viewer. */
+export type OwnedEntry = Ownership & { other?: boolean };
 
 const ownerKey = (slug: string) => `lunchslot:${slug}`;
 const NAME_KEY = "lunchslot:name";
@@ -37,8 +39,15 @@ function write(key: string, value: string | null) {
 }
 
 export const storage = {
-  setOwner: (slug: string, o: Ownership) => write(ownerKey(slug), JSON.stringify(o)),
-  clearOwner: (slug: string) => write(ownerKey(slug), null),
+  /** Adds an entry, or updates the one with the same participant. */
+  saveEntry(slug: string, e: OwnedEntry) {
+    const list = parseEntries(read(ownerKey(slug))).filter((o) => o.participantId !== e.participantId);
+    write(ownerKey(slug), JSON.stringify([...list, e]));
+  },
+  forgetEntry(slug: string, participantId: string) {
+    const list = parseEntries(read(ownerKey(slug))).filter((o) => o.participantId !== participantId);
+    write(ownerKey(slug), list.length ? JSON.stringify(list) : null);
+  },
   setName: (name: string) => write(NAME_KEY, name),
   setTz: (tz: string) => write(TZ_KEY, tz),
   addRecent(m: RecentMeeting) {
@@ -62,15 +71,20 @@ export function useRecentMeetings(): RecentMeeting[] {
   return useMemo(() => parseRecent(raw), [raw]);
 }
 
-export function useOwner(slug: string): Ownership | null {
+// Older versions stored a single entry, as an object.
+function parseEntries(raw: string | null): OwnedEntry[] {
+  try {
+    const v = raw ? JSON.parse(raw) : [];
+    return (Array.isArray(v) ? v : [v]).filter((o) => o && typeof o.participantId === "string");
+  } catch {
+    return [];
+  }
+}
+
+/** The entries this browser added to a meeting: the viewer's own, and any added for others. */
+export function useOwnedEntries(slug: string): OwnedEntry[] {
   const raw = useSyncExternalStore(subscribe, () => read(ownerKey(slug)), () => null);
-  return useMemo(() => {
-    try {
-      return raw ? (JSON.parse(raw) as Ownership) : null;
-    } catch {
-      return null;
-    }
-  }, [raw]);
+  return useMemo(() => parseEntries(raw), [raw]);
 }
 
 export function useStoredName(): string {
