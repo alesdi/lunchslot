@@ -14,6 +14,32 @@ function fmt(slot: Slot, tz: string) {
   return { day, time };
 }
 
+/** Stands in for the slots while they're recomputed for a new range or must-attend choice. */
+export function SlotListSkeleton({ count }: { count: number }) {
+  return (
+    <div role="status" className="space-y-3">
+      <span className="sr-only">Updating the best times…</span>
+      {Array.from({ length: Math.max(1, count) }, (_, i) =>
+        i === 0 ? (
+          <div key={i} aria-hidden className="rounded-xl bg-yolk/40 px-5 py-4 motion-safe:animate-pulse">
+            <div className="h-5 w-24 rounded-full bg-yolk-ink/15" />
+            <div className="mt-3 h-4 w-40 rounded bg-yolk-ink/15" />
+            <div className="mt-2 h-10 w-56 rounded bg-yolk-ink/15 sm:h-12" />
+            <div className="mt-3 h-4 w-48 rounded bg-yolk-ink/15" />
+          </div>
+        ) : (
+          <div key={i} aria-hidden className="rounded-xl border border-line bg-surface px-5 py-4 motion-safe:animate-pulse">
+            <div className="h-5 w-24 rounded-full bg-line" />
+            <div className="mt-3 h-4 w-36 rounded bg-line" />
+            <div className="mt-2 h-7 w-44 rounded bg-line" />
+            <div className="mt-3 h-4 w-40 rounded bg-line" />
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
 const list = (names: string[]) => new Intl.ListFormat(undefined, { type: "conjunction" }).format(names);
 
 /**

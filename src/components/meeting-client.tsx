@@ -22,7 +22,7 @@ import {
 import { AvailabilityInput } from "./availability-input";
 import { FormError, NameField, SubmitButton } from "./form-bits";
 import { MeetingHeading } from "./meeting-title";
-import { SlotList } from "./slot-list";
+import { SlotList, SlotListSkeleton } from "./slot-list";
 import { CREATOR_STEPS, Steps } from "./steps";
 import { TimezoneField } from "./timezone-field";
 
@@ -62,6 +62,8 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
   // the last change (a poll for the previous range, say) is dropped instead of shown.
   const [viewOpts, setViewOptsState] = useState<ViewOptions>({ horizonDays: initial.horizonDays, required: initial.required });
   const viewOptsRef = useRef({ ...viewOpts, version: 0 });
+  // True while the slots are recomputed after the viewer changed what they're looking at.
+  const [switching, setSwitching] = useState(false);
   const horizonId = useId();
 
   /** Runs a request for the current view options, and shows its view only if they haven't changed since. */
@@ -81,9 +83,14 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
   );
 
   function setViewOpts(next: ViewOptions) {
-    viewOptsRef.current = { ...next, version: viewOptsRef.current.version + 1 };
+    const version = viewOptsRef.current.version + 1;
+    viewOptsRef.current = { ...next, version };
     setViewOptsState(next);
-    refresh();
+    setSwitching(true);
+    // Shown for a moment even when the answer is instant, so it's clear the times were recomputed.
+    Promise.all([refresh(), new Promise((r) => setTimeout(r, 400))])
+      .catch(() => {})
+      .finally(() => viewOptsRef.current.version === version && setSwitching(false));
   }
 
   function toggleRequired(id: string) {
@@ -386,7 +393,9 @@ export function MeetingClient({ initial }: { initial: MeetingView }) {
                 </div>
               </fieldset>
             )}
-            {viewerTz ? (
+            {viewerTz && switching ? (
+              <SlotListSkeleton count={view.slots.length} />
+            ) : viewerTz ? (
               <SlotList
                 slots={view.slots}
                 total={total - idle.length}
